@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router";
 
 import { SettingsDrawer } from "../features/providers/SettingsDrawer";
 import { HealthBadge } from "./HealthBadge";
+import { UserMenu } from "./UserMenu";
 import styles from "./AppTopbar.module.css";
 
 /**
@@ -67,6 +68,7 @@ export function AppTopbar({ current, brand, leftExtra, center, settingsOpen, onS
         <Button icon={<Settings2 size={16} strokeWidth={1.75} />} onClick={() => onSettingsOpenChange(true)}>
           设置
         </Button>
+        <UserMenu />
       </nav>
       <SettingsDrawer open={settingsOpen} onClose={() => onSettingsOpenChange(false)} />
     </header>

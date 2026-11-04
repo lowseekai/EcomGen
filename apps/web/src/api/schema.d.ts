@@ -1734,6 +1734,506 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listBillingOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/topup-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createTopupOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getBillingOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminUsers"];
+        put?: never;
+        post: operations["createAdminUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getAdminUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patchAdminUser"];
+        trace?: never;
+    };
+    "/admin/users/{userId}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resetAdminUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adjustAdminUserCredits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["listAdminUserLedger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/billing/uncertain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listUncertainBillingOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/billing/{jobId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolveBillingOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminPrices"];
+        put?: never;
+        post: operations["upsertAdminPrice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prices/{priceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                priceId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteAdminPrice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payments/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPaymentConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updatePaymentConfig"];
+        trace?: never;
+    };
+    "/admin/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAdminDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patchAdminPlan"];
+        trace?: never;
+    };
+    "/admin/payment-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminPaymentOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payment-orders/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPaymentReconcile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payment-orders/{orderId}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmAdminPaymentOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/payment-orders/{orderId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["closeAdminPaymentOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["registerUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/settings/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getMailSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateMailSettings"];
+        trace?: never;
+    };
+    "/admin/settings/mail/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testMailSettings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3566,6 +4066,473 @@ export interface components {
         FinalizeDraftCandidateResponse: {
             pattern: components["schemas"]["Pattern"];
             reused: boolean;
+        };
+        /** @enum {string} */
+        AdminRole: "owner" | "admin" | "support" | "user";
+        /** @enum {string} */
+        AdminUserStatus: "active" | "disabled";
+        AdminUser: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            displayName: string;
+            role: components["schemas"]["AdminRole"];
+            status: components["schemas"]["AdminUserStatus"];
+            emailVerifiedAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            balanceMicrocredits: number;
+        };
+        AdminUserList: {
+            items: components["schemas"]["AdminUser"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
+        AdminUserDetail: {
+            activeSubscription: {
+                [key: string]: unknown;
+            } | null;
+            entitlements: {
+                entitlements: components["schemas"]["Entitlements"];
+                planCode: string;
+            };
+            sessions: components["schemas"]["UserSessionSummary"][];
+        };
+        AdminUserPatchInput: {
+            displayName?: string;
+            role?: components["schemas"]["AdminRole"];
+            status?: components["schemas"]["AdminUserStatus"];
+        };
+        AdminCreateUserInput: {
+            email: string;
+            displayName?: string;
+            role?: components["schemas"]["AdminRole"];
+            password?: string;
+            credits?: number;
+        };
+        AdminCreateUserResult: {
+            generatedPassword?: string;
+        };
+        AdminPasswordResetInput: {
+            password?: string;
+        };
+        AdminPasswordResetResult: {
+            revokedSessions: number;
+            generatedPassword?: string;
+        };
+        AdminCreditAdjustInput: {
+            credits: number;
+            note?: string;
+        };
+        AdminCreditAdjustResult: {
+            balanceMicrocredits: number;
+        };
+        CreditLedgerEntry: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            type: string;
+            amountMicrocredits: number;
+            balanceAfterMicrocredits: number;
+            jobId: string | null;
+            projectId: string | null;
+            note: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreditLedgerPage: {
+            items: components["schemas"]["CreditLedgerEntry"][];
+            total: number;
+            balance: {
+                stored: number;
+                computed: number;
+            };
+            limit: number;
+            offset: number;
+        };
+        Entitlements: {
+            monthlyCredits: number;
+            /** @description -1 表示不限。 */
+            maxProjects: number;
+            maxConcurrentJobs: number;
+            maxImageResolution: components["schemas"]["ImageResolution"];
+            /** @description -1 表示不限。 */
+            maxStorageBytes: number;
+            allowPsdExport: boolean;
+            allowLayerExport: boolean;
+            allowWebResearch: boolean;
+            allowSuiteForge: boolean;
+            allowModelLibrary: boolean;
+            allowPatternStudio: boolean;
+            watermarkExports: boolean;
+        };
+        UserSessionSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            revokedAt: string | null;
+            userAgent: string | null;
+            ip: string | null;
+        };
+        /** @enum {string} */
+        BillingStatus: "reserved" | "settled" | "refunded" | "uncertain";
+        BillingOrder: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            /** Format: uuid */
+            jobId: string;
+            status: components["schemas"]["BillingStatus"];
+            reservedMicrocredits: number;
+            settledMicrocredits: number | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UncertainBillingOrder: {
+            user: components["schemas"]["AdminUser"] | null;
+        };
+        UncertainBillingOrderList: {
+            items: components["schemas"]["UncertainBillingOrder"][];
+            limit: number;
+            offset: number;
+        };
+        ResolveBillingOrderInput: {
+            /** @enum {string} */
+            action: "settle" | "refund";
+            settledMicrocredits?: number;
+            note?: string;
+        };
+        /** @enum {string} */
+        PricingMode: "fixed_request" | "per_image" | "per_resolution" | "token";
+        ProviderModelPrice: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            providerId: string;
+            modelId: string;
+            kind: string;
+            pricingMode: components["schemas"]["PricingMode"];
+            priceMicrocredits: number;
+            costMicrocredits: number;
+            tiers: {
+                [key: string]: number;
+            };
+            active: boolean;
+        };
+        ProviderModelPriceList: {
+            items: components["schemas"]["ProviderModelPrice"][];
+        };
+        UpsertProviderModelPriceInput: {
+            /** Format: uuid */
+            providerId: string;
+            modelId: string;
+            kind: string;
+            pricingMode: components["schemas"]["PricingMode"];
+            priceMicrocredits?: number;
+            costMicrocredits?: number;
+            tiers?: {
+                [key: string]: number;
+            };
+            active?: boolean;
+        };
+        AuditEvent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            actor_user_id: string;
+            action: string;
+            target_type: string;
+            target_id: string | null;
+            summary: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AuditEventList: {
+            items: components["schemas"]["AuditEvent"][];
+            limit: number;
+            offset: number;
+        };
+        PaymentConfig: {
+            provider: string | null;
+            hasKey: boolean;
+            gateway: string | null;
+            pid: string | null;
+            payType: string;
+            pricePerCreditCents: number;
+            publicBaseUrl: string;
+        };
+        PaymentConfigInput: {
+            gateway?: string;
+            pid?: string;
+            key?: string;
+            payType?: string;
+            pricePerCreditCents?: number;
+            publicBaseUrl?: string;
+        };
+        PaymentConfigUpdateResult: {
+            ok: boolean;
+            hasKey: boolean;
+        };
+        /** @enum {string} */
+        PaymentOrderStatus: "created" | "pending" | "paid" | "closed" | "failed";
+        PaymentOrder: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            credits: number;
+            amountCents: number;
+            currency: string;
+            status: components["schemas"]["PaymentOrderStatus"];
+            provider: string;
+            tradeNo: string | null;
+            paidAt: string | null;
+            creditedAt: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PaymentOrderList: {
+            items: components["schemas"]["PaymentOrder"][];
+            pricePerCreditCents: number;
+            limit: number;
+            offset: number;
+        };
+        CreateTopupOrderInput: {
+            credits: number;
+        };
+        CreateTopupOrderResult: {
+            order: components["schemas"]["PaymentOrder"];
+            checkoutUrl: string;
+        };
+        AdminDashboard: {
+            users: {
+                total: number;
+                active: number;
+                disabled: number;
+            };
+            projects: {
+                total: number;
+                active: number;
+            };
+            jobs: {
+                total: number;
+                queued: number;
+                running: number;
+                succeeded: number;
+                failed: number;
+                cancelled: number;
+            };
+            billing: {
+                reserved: number;
+                uncertain: number;
+                settled: number;
+                refunded: number;
+                settledMicrocredits: number;
+            };
+            credits: {
+                issuedMicrocredits: number;
+                spentMicrocredits: number;
+                toppedUpMicrocredits: number;
+            };
+            payments: {
+                pending: number;
+                paid: number;
+                creditedMicrocredits: number;
+            };
+            storage: {
+                patterns: number;
+                models: number;
+                assets: number;
+                outputs: number;
+            };
+            display: {
+                settledCredits: number;
+                toppedUpCredits: number;
+                spentCredits: number;
+            };
+        };
+        /** @enum {string} */
+        BillingPeriod: "none" | "month" | "year";
+        PlanEntitlements: {
+            monthlyCredits?: number;
+            maxProjects?: number;
+            maxConcurrentJobs?: number;
+            maxImageResolution?: string;
+            maxStorageBytes?: number;
+            allowPsdExport?: boolean;
+            allowLayerExport?: boolean;
+            allowWebResearch?: boolean;
+            allowSuiteForge?: boolean;
+            allowModelLibrary?: boolean;
+            allowPatternStudio?: boolean;
+            watermarkExports?: boolean;
+        };
+        Plan: {
+            /** @description 套餐标识，稳定 slug（如 plan-free），跨环境一致。 */
+            id: string;
+            code: string;
+            name: string;
+            description: string;
+            priceCents: number;
+            currency: string;
+            billingPeriod: components["schemas"]["BillingPeriod"];
+            active: boolean;
+            sortOrder: number;
+            entitlements: components["schemas"]["PlanEntitlements"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        PlanList: {
+            items: components["schemas"]["Plan"][];
+        };
+        AdminPlanPatchInput: {
+            name?: string;
+            description?: string;
+            priceCents?: number;
+            billingPeriod?: components["schemas"]["BillingPeriod"];
+            active?: boolean;
+            sortOrder?: number;
+            entitlements?: components["schemas"]["PlanEntitlements"];
+        };
+        AdminPaymentOrder: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            userId: string;
+            kind: string;
+            planId: string | null;
+            creditsMicrocredits: number;
+            credits: number;
+            amountCents: number;
+            currency: string;
+            status: components["schemas"]["PaymentOrderStatus"];
+            provider: string;
+            providerConfig: {
+                [key: string]: unknown;
+            } | null;
+            providerOrderNo: string | null;
+            providerTradeNo: string | null;
+            paidAt: string | null;
+            creditedAt: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            user: components["schemas"]["AdminUser"] | null;
+        };
+        AdminPaymentOrderList: {
+            items: components["schemas"]["AdminPaymentOrder"][];
+            limit: number;
+            offset: number;
+        };
+        PaymentReconcile: {
+            paidNotCredited: {
+                [key: string]: unknown;
+            }[];
+            expiredUnpaid: {
+                [key: string]: unknown;
+            }[];
+            limit: number;
+            offset: number;
+        };
+        AdminPaymentConfirmInput: {
+            tradeNo?: string;
+        };
+        AdminPaymentConfirmResult: {
+            credited: boolean;
+            order: components["schemas"]["AdminPaymentOrder"] | null;
+        };
+        SessionUser: {
+            /** Format: uuid */
+            id: string;
+            email: string;
+            displayName: string;
+            role: components["schemas"]["AdminRole"];
+            status: components["schemas"]["AdminUserStatus"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SessionPayload: {
+            user: components["schemas"]["SessionUser"];
+            planCode: string;
+            entitlements: components["schemas"]["Entitlements"];
+            balanceMicrocredits: number;
+            usedStorageBytes: number;
+        };
+        SessionState: components["schemas"]["SessionPayload"] | {
+            user: null;
+        };
+        RegisterInput: {
+            email: string;
+            password: string;
+            displayName?: string;
+        };
+        LoginInput: {
+            email: string;
+            password: string;
+        };
+        PasswordResetRequestInput: {
+            email: string;
+        };
+        PasswordResetRequestResult: {
+            /** @constant */
+            accepted: true;
+            token?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        PasswordResetConfirmInput: {
+            token: string;
+            password: string;
+        };
+        ChangePasswordInput: {
+            currentPassword: string;
+            newPassword: string;
+        };
+        MailSettings: {
+            configured: boolean;
+            host: string | null;
+            port: number;
+            secure: boolean;
+            requireStartTls: boolean;
+            user: string | null;
+            from: string | null;
+            fromName: string | null;
+            hasPass: boolean;
+        };
+        MailSettingsInput: {
+            host?: string;
+            port?: number;
+            secure?: boolean;
+            requireStartTls?: boolean;
+            user?: string;
+            pass?: string;
+            from?: string;
+            fromName?: string;
+        };
+        MailSettingsUpdateResult: {
+            ok: boolean;
+            hasPass: boolean;
+        };
+        MailTestResult: {
+            ok: boolean;
         };
     };
     responses: {
@@ -6888,6 +7855,847 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+        };
+    };
+    listBillingOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前用户的充值订单与积分单价。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentOrderList"];
+                };
+            };
+        };
+    };
+    createTopupOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTopupOrderInput"];
+            };
+        };
+        responses: {
+            /** @description 订单已创建，返回收银台地址。 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateTopupOrderResult"];
+                };
+            };
+            /** @description 支付渠道未配置。 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getBillingOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 订单状态；别人的订单按 404 处理。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentOrder"];
+                };
+            };
+        };
+    };
+    listAdminUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 用户列表，带余额。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    createAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreateUserInput"];
+            };
+        };
+        responses: {
+            /** @description 用户已创建；未指定密码时返回一次性密码。 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreateUserResult"];
+                };
+            };
+        };
+    };
+    getAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 用户详情，含权益与会话。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+        };
+    };
+    patchAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserPatchInput"];
+            };
+        };
+        responses: {
+            /** @description 用户已更新。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUser"];
+                };
+            };
+        };
+    };
+    resetAdminUserPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPasswordResetInput"];
+            };
+        };
+        responses: {
+            /** @description 密码已重置，该用户全部会话失效。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPasswordResetResult"];
+                };
+            };
+        };
+    };
+    adjustAdminUserCredits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreditAdjustInput"];
+            };
+        };
+        responses: {
+            /** @description 积分已调整。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCreditAdjustResult"];
+                };
+            };
+        };
+    };
+    listAdminUserLedger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 积分流水与余额对账。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditLedgerPage"];
+                };
+            };
+        };
+    };
+    listUncertainBillingOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 等待人工裁决的计费单。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UncertainBillingOrderList"];
+                };
+            };
+        };
+    };
+    resolveBillingOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveBillingOrderInput"];
+            };
+        };
+        responses: {
+            /** @description 计费单已裁决。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingOrder"];
+                };
+            };
+            /** @description 该计费单不处于 uncertain。 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAdminPrices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 平台价目表。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderModelPriceList"];
+                };
+            };
+        };
+    };
+    upsertAdminPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertProviderModelPriceInput"];
+            };
+        };
+        responses: {
+            /** @description 价目已保存。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderModelPrice"];
+                };
+            };
+        };
+    };
+    deleteAdminPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                priceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 价目已删除。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAdminAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 管理操作审计。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventList"];
+                };
+            };
+        };
+    };
+    getPaymentConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 支付渠道配置；密钥不回显。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentConfig"];
+                };
+            };
+        };
+    };
+    updatePaymentConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentConfigInput"];
+            };
+        };
+        responses: {
+            /** @description 配置已保存。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentConfigUpdateResult"];
+                };
+            };
+        };
+    };
+    getAdminDashboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 平台运行总览。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboard"];
+                };
+            };
+        };
+    };
+    listAdminPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 全部套餐，含已停用。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanList"];
+                };
+            };
+        };
+    };
+    patchAdminPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlanPatchInput"];
+            };
+        };
+        responses: {
+            /** @description 套餐已更新。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+        };
+    };
+    listAdminPaymentOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 全部充值订单。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPaymentOrderList"];
+                };
+            };
+        };
+    };
+    getPaymentReconcile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已付未入账与超期未付。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentReconcile"];
+                };
+            };
+        };
+    };
+    confirmAdminPaymentOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPaymentConfirmInput"];
+            };
+        };
+        responses: {
+            /** @description 人工确认到账；重复确认不会重复加积分。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPaymentConfirmResult"];
+                };
+            };
+        };
+    };
+    closeAdminPaymentOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 订单已关闭。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPaymentOrder"];
+                };
+            };
+            /** @description 已入账的订单不能关闭。 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    registerUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterInput"];
+            };
+        };
+        responses: {
+            /** @description 注册成功并建立会话。 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionPayload"];
+                };
+            };
+            /** @description 未开放注册。 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 邮箱已注册。 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginInput"];
+            };
+        };
+        responses: {
+            /** @description 登录成功并建立会话。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionPayload"];
+                };
+            };
+            /** @description 邮箱或密码不正确。 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 账号已被禁用。 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 会话已撤销。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前会话；未登录时 user 为 null。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionState"];
+                };
+            };
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequestInput"];
+            };
+        };
+        responses: {
+            /** @description 已受理；无论邮箱是否存在都返回 accepted。 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetRequestResult"];
+                };
+            };
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmInput"];
+            };
+        };
+        responses: {
+            /** @description 密码已重置，全部会话失效。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordInput"];
+            };
+        };
+        responses: {
+            /** @description 密码已修改，全部会话失效。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getMailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 邮件服务器配置；口令不回显。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailSettings"];
+                };
+            };
+        };
+    };
+    updateMailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description 配置已保存。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailSettingsUpdateResult"];
+                };
+            };
+        };
+    };
+    testMailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 连通性与认证检查通过。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailTestResult"];
+                };
+            };
+            /** @description 尚未配置邮件服务器。 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 连接或认证失败。 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

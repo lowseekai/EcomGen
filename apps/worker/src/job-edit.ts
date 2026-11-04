@@ -196,6 +196,7 @@ export async function executeEditGeneration(ctx: WorkerContext, job: JobRecord, 
     const { width, height } = await outputDerivatives(storage, stored.hash, composed);
     const output = repository.createOutput({ projectId: project.id, storyboardItemId: source.storyboardItemId, jobId: job.id, candidateIndex, generationSnapshot: { providerId: provider.id, modelId: model.id, resolution: config.imageResolution, aspectRatio: project.imageAspectRatio, size: "source", candidateIndex, operation: plan.operation, executionMode: plan.executionMode, targetDescription: plan.targetDescription, targetConfidence: plan.targetConfidence, sourceOutputId: source.id, maskHash: turn.editMaskHash, protectMaskHash: turn.protectMaskHash, compositePolicy: plan.compositePolicy, referenceSelections: turn.referenceSelections, referenceHashes: Object.fromEntries(turn.referenceSelections.map((selection) => { const asset = selection.source === "PROJECT" ? assets.find((candidate) => candidate.id === selection.id) : temporaryAssets.find((candidate) => candidate.id === selection.id); return [selection.id, asset?.hash ?? null]; })) }, storagePath: stored.path, hash: stored.hash, width, height, generationKey, parentOutputId: source.id, rootOutputId: source.rootOutputId ?? source.id, editSessionId: session.id, editTurnId: turn.id });
     await updateJob(job, { providerTaskId: null });
+    repository.recordStorageSize("outputs", output.id, composed.byteLength);
     createdOutputs.push(output);
   }
   const output = createdOutputs.at(-1);

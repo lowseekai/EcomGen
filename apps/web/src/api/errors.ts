@@ -10,6 +10,11 @@ export const API_ERROR_CODES = [
   "RATE_LIMITED",
   "PROVIDER_ERROR",
   "INTERNAL_ERROR",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "QUEUE_UNAVAILABLE",
+  "QUOTA_EXCEEDED",
+  "INSUFFICIENT_CREDITS",
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

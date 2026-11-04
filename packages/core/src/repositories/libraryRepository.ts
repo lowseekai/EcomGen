@@ -5,6 +5,7 @@ import type {
   ModelSpec,
 } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { SYSTEM_SCOPE, resolveScope, type ScopeInput } from "../scope.js";
 import type { AssetRecord } from "./assetRepository.js";
 import type { LayerExportRecord } from "./exportRepository.js";
 import type { ModelPortraitRecord, ModelRecord } from "./modelRepository.js";
@@ -100,7 +101,7 @@ function decodeLibraryCursor(cursor: string | null): { createdAt: string; id: st
 
 /** 资产库：横跨 assets/outputs/model_portraits/layer_exports/patterns/print_packs 的只读投影，独立于任何单一聚合。 */
 export class LibraryRepository {
-  public constructor(private readonly db: SqliteDatabase, private readonly lookups: LibrarySourceLookups) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE, private readonly lookups: LibrarySourceLookups) { }
 
   /**
    * 资产库视图：assets、outputs、model_portraits 与 layer_exports 逐元素切图合并为一张派生表。
@@ -117,6 +118,11 @@ export class LibraryRepository {
     const needle = query.q?.trim().toLowerCase() ?? "";
     const cursor = decodeLibraryCursor(query.cursor ?? null);
 
+    // 归属过滤逐分支下推：UNION 的每个分支都要各自带上，外层 WHERE 只作用在合并结果上。
+    const resolvedScope = resolveScope(this.scope);
+    const ownerId = resolvedScope.kind === "owner" ? resolvedScope.ownerId : null;
+    const own = (alias: string, hasWhere: boolean) => (ownerId ? `${hasWhere ? " AND" : " WHERE"} ${alias}.owner_id = @ownerId` : "");
+
     // 分层导出把每个元素/背景切图作为独立生成产物纳入库；PSD 复合层（composite）二进制不可预览，排除。
     // model_spec_json 只为定妆照行提供模特规格，供按身份维度筛选；其余来源行为 NULL，天然不命中身份筛选。
     const librarySql = `
@@ -125,73 +131,72 @@ export class LibraryRepository {
              a.project_id AS project_id, p.name AS project_name, a.original_name AS name,
              a.mime_type AS mime_type, a.storage_path AS storage_path, a.hash AS hash,
              a.width AS width, a.height AS height, a.role AS role, a.created_at AS created_at,
-             NULL AS model_spec_json
-      FROM assets a JOIN projects p ON p.id = a.project_id
+             NULL AS gender, NULL AS age, NULL AS heritage, NULL AS stature, NULL AS build
+      FROM assets a JOIN projects p ON p.id = a.project_id${own("p", false)}
       UNION ALL
       SELECT 'output:' || o.id, 'GENERATED', 'GENERATED',
              o.project_id, p.name, COALESCE(si.display_name, si.asset_type, '生成图'),
              NULL, o.storage_path, o.hash, o.width, o.height, NULL, o.created_at,
-             NULL
+             NULL AS gender, NULL AS age, NULL AS heritage, NULL AS stature, NULL AS build
       FROM outputs o JOIN projects p ON p.id = o.project_id
-      LEFT JOIN storyboard_items si ON si.id = o.storyboard_item_id
+      LEFT JOIN storyboard_items si ON si.id = o.storyboard_item_id${own("p", false)}
       UNION ALL
       SELECT 'model:' || mp.id, 'MODEL', 'MODEL',
              '', '模特库', m.name,
              NULL, mp.storage_path, mp.hash, mp.width, mp.height, NULL, mp.created_at,
-             m.spec_json
-      FROM model_portraits mp JOIN models m ON m.id = mp.model_id
+             m.gender, m.age, m.heritage, m.stature, m.build
+      FROM model_portraits mp JOIN models m ON m.id = mp.model_id${own("m", false)}
       UNION ALL
-      SELECT 'layer:' || le.id || ':' || je.key, 'GENERATED', 'LAYER',
+      SELECT 'layer:' || le.id || ':' || lf.position, 'GENERATED', 'LAYER',
              le.project_id, p.name,
-             COALESCE(si.display_name, si.asset_type, '生成图') || ' · ' || json_extract(je.value, '$.name'),
-             'image/png', json_extract(je.value, '$.storagePath'), json_extract(je.value, '$.hash'),
+             COALESCE(si.display_name, si.asset_type, '生成图') || ' · ' || lf.name,
+             'image/png', lf.storage_path, lf.hash,
              o.width, o.height, NULL, le.created_at,
-             NULL
+             NULL AS gender, NULL AS age, NULL AS heritage, NULL AS stature, NULL AS build
       FROM layer_exports le
+      JOIN layer_export_files lf ON lf.layer_export_id = le.id
       JOIN projects p ON p.id = le.project_id
       LEFT JOIN outputs o ON o.id = le.output_id
       LEFT JOIN storyboard_items si ON si.id = o.storyboard_item_id
-      CROSS JOIN json_each(le.layer_files_json) je
-      WHERE le.status = 'SUCCEEDED' AND le.layer_files_json IS NOT NULL
-        AND json_extract(je.value, '$.hash') IS NOT NULL
-        AND json_extract(je.value, '$.storagePath') IS NOT NULL
-        AND (json_extract(je.value, '$.kind') IS NULL OR json_extract(je.value, '$.kind') <> 'composite')
+      WHERE le.status = 'SUCCEEDED'
+        AND lf.hash IS NOT NULL
+        AND lf.kind <> 'composite'${own("p", true)}
       UNION ALL
       SELECT 'pattern:' || pt.id,
              CASE WHEN pt.source_type = 'UPLOADED' THEN 'UPLOADED' ELSE 'GENERATED' END, 'PATTERN',
              '', '花型工坊', pt.name,
              'image/png', pt.storage_path, pt.file_hash, pt.width, pt.height, NULL, pt.created_at,
-             NULL
+             NULL AS gender, NULL AS age, NULL AS heritage, NULL AS stature, NULL AS build
       FROM patterns pt
-      WHERE pt.storage_path IS NOT NULL AND pt.file_hash IS NOT NULL
+      WHERE pt.storage_path IS NOT NULL AND pt.file_hash IS NOT NULL${own("pt", true)}
       UNION ALL
-      SELECT 'pack:' || pk.id || ':' || je.key, 'GENERATED', 'PRINT_PACK',
+      SELECT 'pack:' || pk.id || ':' || pf.position, 'GENERATED', 'PRINT_PACK',
              '', '花型工坊', pt2.name || ' · ' || pk.spec_id,
-             'image/png', json_extract(je.value, '$.storagePath'), json_extract(je.value, '$.hash'),
+             'image/png', pf.storage_path, pf.hash,
              NULL, NULL, NULL, pk.created_at,
-             NULL
+             NULL AS gender, NULL AS age, NULL AS heritage, NULL AS stature, NULL AS build
       FROM print_packs pk
+      JOIN print_pack_files pf ON pf.print_pack_id = pk.id
       JOIN patterns pt2 ON pt2.id = pk.pattern_id
-      CROSS JOIN json_each(pk.files_json) je
-      WHERE pk.status = 'SUCCEEDED' AND pk.files_json IS NOT NULL
-        AND json_extract(je.value, '$.kind') = 'PRINT_FILE'
-        AND json_extract(je.value, '$.hash') IS NOT NULL
-        AND json_extract(je.value, '$.storagePath') IS NOT NULL
+      WHERE pk.status = 'SUCCEEDED'
+        AND pf.kind = 'PRINT_FILE'
+        AND pf.hash IS NOT NULL${own("pt2", true)}
     `;
 
     const sourceFilters: string[] = [];
     const sourceParams: Record<string, string | number> = {};
+    if (ownerId) sourceParams.ownerId = ownerId;
     if (kind) { sourceFilters.push("kind = @kind"); sourceParams.kind = kind; }
     // 模特定妆照的项目归属是空串：按项目筛选时它不命中，也不会被伪造成某个真实项目。
     if (projectId) { sourceFilters.push("project_id = @projectId"); sourceParams.projectId = projectId; }
     // created_at 统一是 canonical ISO（now() 产出），与规范化后的入参做字典序比较即时间序比较。
     if (query.createdFrom) { sourceFilters.push("created_at >= @createdFrom"); sourceParams.createdFrom = query.createdFrom; }
     if (query.createdTo) { sourceFilters.push("created_at <= @createdTo"); sourceParams.createdTo = query.createdTo; }
-    // 身份维度取自模特实体的 spec；非定妆照行的 model_spec_json 为 NULL，与等值比较天然为假。
+    // 身份维度是 models 上的真实列；非定妆照行全为 NULL，与等值比较天然为假。
     for (const dimension of LIBRARY_MODEL_SPEC_DIMENSIONS) {
       const value = query.modelSpec?.[dimension];
       if (!value) continue;
-      sourceFilters.push(`json_extract(model_spec_json, '$.${dimension}') = @modelSpec_${dimension}`);
+      sourceFilters.push(`${dimension} = @modelSpec_${dimension}`);
       sourceParams[`modelSpec_${dimension}`] = value;
     }
     if (needle) {
@@ -256,18 +261,14 @@ export class LibraryRepository {
     if (asset) return String(asset.storage_path);
     const output = this.db.prepare("SELECT storage_path FROM outputs WHERE hash=? LIMIT 1").get(hash) as Row | undefined;
     if (output) return String(output.storage_path);
-    const layer = this.db.prepare(
-      "SELECT json_extract(je.value, '$.storagePath') AS storage_path FROM layer_exports le, json_each(le.layer_files_json) je WHERE json_extract(je.value, '$.hash')=? LIMIT 1",
-    ).get(hash) as Row | undefined;
+    const layer = this.db.prepare("SELECT storage_path FROM layer_export_files WHERE hash=? LIMIT 1").get(hash) as Row | undefined;
     if (layer?.storage_path) return String(layer.storage_path);
     // 模特定妆照同样进资产库：漏掉这一步，MODEL 条目的缩略图在惰性生成时会 404。
     const portrait = this.db.prepare("SELECT storage_path FROM model_portraits WHERE hash=? LIMIT 1").get(hash) as Row | undefined;
     if (portrait?.storage_path) return String(portrait.storage_path);
     const pattern = this.db.prepare("SELECT storage_path FROM patterns WHERE file_hash=? LIMIT 1").get(hash) as Row | undefined;
     if (pattern?.storage_path) return String(pattern.storage_path);
-    const packFile = this.db.prepare(
-      "SELECT json_extract(je.value, '$.storagePath') AS storage_path FROM print_packs pk, json_each(pk.files_json) je WHERE json_extract(je.value, '$.hash')=? LIMIT 1",
-    ).get(hash) as Row | undefined;
+    const packFile = this.db.prepare("SELECT storage_path FROM print_pack_files WHERE hash=? LIMIT 1").get(hash) as Row | undefined;
     return packFile?.storage_path ? String(packFile.storage_path) : undefined;
   }
 

@@ -27,6 +27,7 @@ import type { FastifyInstance } from "fastify";
 import { EcomRepository, LocalAssetStore, openDatabase } from "@ecomgen/core";
 import { MAX_DRAFT_MEDIA_NOTES_LENGTH } from "@ecomgen/contracts";
 import { buildApi } from "./app.js";
+import { authenticateTestClient } from "./test-auth.js";
 import { enqueue } from "@ecomgen/jobs";
 
 let dataDir = "";
@@ -41,6 +42,10 @@ beforeEach(async () => {
   database = openDatabase(join(dataDir, "ecomgen.sqlite"));
   repository = new EcomRepository(database);
   storage = new LocalAssetStore(dataDir);
+  // 鉴权钩子已开启：给 inject 默认带上站长会话。
+  const owner = authenticateTestClient(app, repository);
+  // 用例直接落库造的数据必须归属于登录用户，否则请求侧按归属过滤后看不见自己刚造的行。
+  repository = repository.forOwner(owner.id);
   vi.mocked(enqueue).mockReset().mockResolvedValue(undefined);
 });
 

@@ -16,6 +16,15 @@ services:
       REDIS_URL: redis://redis:6379
       ECOMGEN_DATA_DIR: /app/data
       ECOMGEN_MASTER_KEY: ${ECOMGEN_MASTER_KEY:?Set a base64-encoded 32-byte key in .env}
+      # 首次启动创建的站长账号；users 表非空时忽略。
+      ECOMGEN_BOOTSTRAP_EMAIL: ${ECOMGEN_BOOTSTRAP_EMAIL:-owner@ecomgen.local}
+      ECOMGEN_BOOTSTRAP_PASSWORD: ${ECOMGEN_BOOTSTRAP_PASSWORD:-}
+      # 生产走 HTTPS 时置为 true，否则会话 cookie 不带 Secure。
+      ECOMGEN_SECURE_COOKIES: ${ECOMGEN_SECURE_COOKIES:-false}
+      # 与 worker 必须一致；Compose 只转发这里列出的变量，.env 里改了不写这行是不生效的。
+      ECOMGEN_QUEUE_NAME: ${ECOMGEN_QUEUE_NAME:-ecomgen}
+      # 前后端分离部署时必须设置，否则浏览器会被 CORS 拦掉。
+      ECOMGEN_CORS_ORIGINS: ${ECOMGEN_CORS_ORIGINS:-}
     ports:
       - "8787:8787"
     volumes:
@@ -31,7 +40,9 @@ services:
       REDIS_URL: redis://redis:6379
       ECOMGEN_DATA_DIR: /app/data
       ECOMGEN_MASTER_KEY: ${ECOMGEN_MASTER_KEY:?Set a base64-encoded 32-byte key in .env}
-      WORKER_CONCURRENCY: 2
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      ECOMGEN_QUEUE_NAME: ${ECOMGEN_QUEUE_NAME:-ecomgen}
+      WORKER_JOB_TIMEOUT_MS: ${WORKER_JOB_TIMEOUT_MS:-900000}
     volumes:
       - ecomgen_data:/app/data
 

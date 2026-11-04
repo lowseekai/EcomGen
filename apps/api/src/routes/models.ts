@@ -5,9 +5,13 @@ import { requestFingerprint } from "@ecomgen/core";
 import { findModelSpecConflicts } from "@ecomgen/ecom-skill";
 import { CreateModelCastJobInput, CreateModelInput, UpdateModelInput } from "@ecomgen/contracts";
 import type { ModelSpec } from "@ecomgen/contracts";
+import { createChargedJob } from "../charged-jobs.js";
 import type { ApiContext } from "../context.js";
 import { ApiError } from "../errors.js";
-import { ensureModel, missing, reusableFingerprintedJob, verifyModel } from "../helpers.js";
+import { currentUser } from "../auth-guard.js";
+import { ensureModel, missing, reusableFingerprintedJob, verifyModel,
+  assertFeature,
+} from "../helpers.js";
 import { parseBody } from "../http-input.js";
 import { parameter, readPatchText, readText } from "../input-normalizers.js";
 
@@ -74,6 +78,7 @@ export function registerModelRoutes(app: FastifyInstance, ctx: ApiContext): void
     return { items: repository.listModels().map((record) => publicModel(record, portraitsByModel.get(record.id) ?? [])), nextCursor: null };
   });
   app.post("/api/v1/models", async (request, reply) => {
+    assertFeature(repository, currentUser(request), "allowModelLibrary");
     const body = parseBody(CreateModelInput, request.body);
     assertModelSpecCoherent(body.spec);
     const record = repository.createModel({ name: readText(body.name, "name"), spec: body.spec, notes: body.notes ?? "" });
@@ -137,7 +142,7 @@ export function registerModelRoutes(app: FastifyInstance, ctx: ApiContext): void
     const fingerprint = requestFingerprint({ type: "MODEL_CAST", modelId: model.id, spec: model.spec, notes: model.notes, referenceFaceHash: model.referenceFaceHash, providerId: body.providerId, imageModelId: body.imageModelId, aspectRatio: body.aspectRatio, imageResolution: body.imageResolution ?? null, quality: body.quality ?? null, outputFormat: body.outputFormat ?? null, candidateCount, idempotencyKey });
     const existing = repository.findJobByFingerprint(null, fingerprint);
     if (existing && reusableFingerprintedJob(existing, repository.listModelPortraitsByJobId(existing.id).length > 0)) return reply.code(existing.status === "SUCCEEDED" ? 200 : 202).send(existing);
-    const job = repository.createJob({ id: randomUUID(), projectId: null, storyboardItemId: null, type: "MODEL_CAST", input: { modelId: model.id, aspectRatio: body.aspectRatio, imageResolution: body.imageResolution ?? null, quality: body.quality ?? null, outputFormat: body.outputFormat ?? null, candidateCount, spec: model.spec, notes: model.notes, referenceFacePath: model.referenceFacePath }, requestFingerprint: fingerprint, providerId: body.providerId, modelId: body.imageModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } });
+    const job = createChargedJob(ctx, request, { id: randomUUID(), projectId: null, storyboardItemId: null, type: "MODEL_CAST", input: { modelId: model.id, aspectRatio: body.aspectRatio, imageResolution: body.imageResolution ?? null, quality: body.quality ?? null, outputFormat: body.outputFormat ?? null, candidateCount, spec: model.spec, notes: model.notes, referenceFacePath: model.referenceFacePath }, requestFingerprint: fingerprint, providerId: body.providerId, modelId: body.imageModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } }, { kind: "image", providerId: body.providerId, modelId: body.imageModelId, units: candidateCount, resolution: body.imageResolution ?? null });
     await enqueueOrMarkFailed(job, "model_cast");
     return reply.code(202).send(job);
   });

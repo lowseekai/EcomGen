@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ListingPlatform,
   PatternPipelineBlockReason,
@@ -9,6 +8,8 @@ import type {
   PodRepeatLayout,
 } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 /** 成包流水线：一次「图案 × 品类规格 × 平台」的串联执行；步骤各自对应一个任务行。 */
@@ -54,7 +55,7 @@ export interface PatternPipelineWithSteps extends PatternPipelineRecord {
 }
 
 export class PatternPipelineRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
   /**
    * 建一条流水线及其全部步骤（同一事务，避免出现没有步骤的流水线）。
@@ -62,25 +63,27 @@ export class PatternPipelineRepository {
    * 从既有花型起链时跳过它。首步若要立刻开跑，由调用方在建好后调 createPipelineStepJob 并入队。
    */
   public createPatternPipeline(input: Omit<PatternPipelineRecord, "id" | "createdAt" | "updatedAt" | "status" | "blockReason"> & { steps: Array<Pick<PatternPipelineStepRecord, "step" | "position">> }): PatternPipelineWithSteps {
-    const record: PatternPipelineRecord = { ...input, status: "QUEUED", blockReason: null, id: randomUUID(), createdAt: now(), updatedAt: now() };
-    const steps: PatternPipelineStepRecord[] = input.steps.map((step) => ({ ...step, id: randomUUID(), pipelineId: record.id, status: "PENDING", jobId: null, detail: null, error: null, createdAt: record.createdAt, updatedAt: record.updatedAt }));
-    const insertPipeline = this.db.prepare(`INSERT INTO pattern_pipelines (id,pattern_id,spec_id,spec_version,layout,repeat_layout,listing_platform,listing_provider_id,listing_model_id,listing_hints_json,status,block_reason,request_fingerprint,created_at,updated_at)
-      VALUES (@id,@patternId,@specId,@specVersion,@layout,@repeatLayout,@listingPlatform,@listingProviderId,@listingModelId,@listingHints,@status,@blockReason,@requestFingerprint,@createdAt,@updatedAt)`);
+    const record: PatternPipelineRecord = { ...input, status: "QUEUED", blockReason: null, id: newId(), createdAt: now(), updatedAt: now() };
+    const steps: PatternPipelineStepRecord[] = input.steps.map((step) => ({ ...step, id: newId(), pipelineId: record.id, status: "PENDING", jobId: null, detail: null, error: null, createdAt: record.createdAt, updatedAt: record.updatedAt }));
+    const insertPipeline = this.db.prepare(`INSERT INTO pattern_pipelines (id,owner_id,pattern_id,spec_id,spec_version,layout,repeat_layout,listing_platform,listing_provider_id,listing_model_id,listing_hints_json,status,block_reason,request_fingerprint,created_at,updated_at)
+      VALUES (@id,@ownerId,@patternId,@specId,@specVersion,@layout,@repeatLayout,@listingPlatform,@listingProviderId,@listingModelId,@listingHints,@status,@blockReason,@requestFingerprint,@createdAt,@updatedAt)`);
     const insertStep = this.db.prepare(`INSERT INTO pattern_pipeline_steps (id,pipeline_id,step,position,status,job_id,detail_json,error_json,created_at,updated_at)
       VALUES (@id,@pipelineId,@step,@position,@status,@jobId,@detail,@error,@createdAt,@updatedAt)`);
     const write = this.db.transaction(() => {
-      insertPipeline.run({ ...record, listingHints: json(record.listingHints) });
+      insertPipeline.run({ ...record, ownerId: ownerValue(this.scope), listingHints: json(record.listingHints) });
       for (const step of steps) insertStep.run({ ...step, detail: null, error: null });
     });
     write();
     return { ...record, steps };
   }
   public listPatternPipelines(patternId: string): PatternPipelineWithSteps[] {
-    const rows = this.db.prepare("SELECT * FROM pattern_pipelines WHERE pattern_id=? ORDER BY created_at DESC, id DESC").all(patternId) as Row[];
+    const owner = ownerClause(this.scope);
+    const rows = this.db.prepare(`SELECT * FROM pattern_pipelines WHERE pattern_id=?${owner.sql} ORDER BY created_at DESC, id DESC`).all(patternId, ...owner.params) as Row[];
     return rows.map((row) => this.withSteps(mapPatternPipeline(row)));
   }
   public getPatternPipeline(id: string): PatternPipelineWithSteps | undefined {
-    const row = this.db.prepare("SELECT * FROM pattern_pipelines WHERE id=?").get(id);
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT * FROM pattern_pipelines WHERE id=?${owner.sql}`).get(id, ...owner.params);
     return row ? this.withSteps(mapPatternPipeline(row as Row)) : undefined;
   }
   /** 进行中的同参数流水线复用依据；已完成的不复用（用户重跑是有意义的意图，不该被静默吞掉）。 */

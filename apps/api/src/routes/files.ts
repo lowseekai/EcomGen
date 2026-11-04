@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiContext } from "../context.js";
-import { missing, renderThumbnail, sendStored } from "../helpers.js";
+import { currentUser } from "../auth-guard.js";
+import { assertFeature, missing, renderThumbnail, sendStored } from "../helpers.js";
 import { parameter } from "../input-normalizers.js";
 
 export function registerFileRoutes(app: FastifyInstance, ctx: ApiContext): void {
@@ -55,6 +56,8 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ApiContext): void 
     return sendStored(request, reply, storage, { storagePath: file.storagePath, hash: file.hash }, "print pack file", file.name);
   });
   app.get("/api/v1/files/layer-exports/:layerExportId", async (request, reply) => {
+    // PSD 是套餐差异项：分层 PNG 免费可用，PSD 需要更高套餐。
+    assertFeature(repository, currentUser(request), "allowPsdExport");
     const record = repository.getLayerExport(parameter(request, "layerExportId"));
     return sendStored(request, reply, storage, record?.psdStoragePath ? { storagePath: record.psdStoragePath } : undefined, "layer export", parameter(request, "layerExportId"));
   });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { EcomRepository, SuiteForgeResultRecord } from "@ecomgen/core";
 import { requestFingerprint } from "@ecomgen/core";
+import { currentUser } from "../auth-guard.js";
 import type { SuiteDocumentInput } from "@ecomgen/ecom-suite";
 import {
   EcomSuiteFile,
@@ -11,9 +12,10 @@ import {
   MAX_SUITE_FORGE_SOURCES,
   MIN_SUITE_FORGE_SHOTS,
 } from "@ecomgen/contracts";
+import { createChargedJob } from "../charged-jobs.js";
 import type { ApiContext } from "../context.js";
 import { ApiError } from "../errors.js";
-import { contentHash, imageDimensions, missing } from "../helpers.js";
+import { assertFeature,contentHash, imageDimensions, missing } from "../helpers.js";
 import { parseBody } from "../http-input.js";
 import { parameter, readOptionalText, readText } from "../input-normalizers.js";
 import { suiteIdForImport } from "./suites.js";
@@ -68,6 +70,7 @@ export function registerSuiteForgeRoutes(app: FastifyInstance, ctx: ApiContext):
   // 套图工坊：把一组爆款整图反推为可复用套图模板。任务不绑定项目，源图以 multipart 随请求上传，
   // 推理模型由前端自选并要求支持视觉；产出先落草稿，用户在页面确认后才写入 user_suites。
   app.post("/api/v1/suite-forge-jobs", async (request, reply) => {
+    assertFeature(repository, currentUser(request), "allowSuiteForge");
     const fields: Record<string, string> = {};
     const uploads: Array<{ filename: string; mimeType: string; buffer: Buffer; hash: string }> = [];
     for await (const part of request.parts()) {
@@ -95,7 +98,7 @@ export function registerSuiteForgeRoutes(app: FastifyInstance, ctx: ApiContext):
       const dimensions = await imageDimensions(upload.buffer);
       sources.push({ storagePath: stored.path, hash: stored.hash, originalName: upload.filename, mimeType: upload.mimeType, width: dimensions.width, height: dimensions.height });
     }
-    const job = repository.createJob({ id: jobId, projectId: null, storyboardItemId: null, type: "SUITE_FORGE", input: { providerId, modelId, sources, hints }, requestFingerprint: fingerprint, providerId, modelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } });
+    const job = createChargedJob(ctx, request, { id: jobId, projectId: null, storyboardItemId: null, type: "SUITE_FORGE", input: { providerId, modelId, sources, hints }, requestFingerprint: fingerprint, providerId, modelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } }, { kind: "reasoning", providerId, modelId });
     await enqueueOrMarkFailed(job, "suite_forge");
     return reply.code(202).send(job);
   });

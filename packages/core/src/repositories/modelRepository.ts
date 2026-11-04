@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { ImageAspectRatio, ModelSpec } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 /** 全局模特库条目；spec 是定妆照 prompt 的唯一持久化真相，不绑定项目。 */
@@ -32,15 +33,19 @@ export interface ModelPortraitRecord {
 }
 
 export class ModelRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
-  public listModels(): ModelRecord[] { return (this.db.prepare("SELECT * FROM models ORDER BY updated_at DESC").all() as Row[]).map(mapModel); }
+  public listModels(): ModelRecord[] {
+    const owner = ownerClause(this.scope);
+    return (this.db.prepare(`SELECT * FROM models WHERE 1=1${owner.sql} ORDER BY updated_at DESC`).all(...owner.params) as Row[]).map(mapModel);
+  }
   public getModel(id: string): ModelRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM models WHERE id=?").get(id);
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT * FROM models WHERE id=?${owner.sql}`).get(id, ...owner.params);
     return row ? mapModel(row as Row) : undefined;
   }
   public createModel(input: { name: string; spec: ModelSpec; notes: string }): ModelRecord {
-    const record: ModelRecord = { id: randomUUID(), name: input.name, spec: input.spec, notes: input.notes, referenceFacePath: null, referenceFaceHash: null, createdAt: now(), updatedAt: now() };
+    const record: ModelRecord = { id: newId(), name: input.name, spec: input.spec, notes: input.notes, referenceFacePath: null, referenceFaceHash: null, createdAt: now(), updatedAt: now() };
     this.writeModel(record);
     return record;
   }
@@ -60,27 +65,32 @@ export class ModelRepository {
     return record;
   }
   public deleteModel(id: string): boolean {
-    return this.db.prepare("DELETE FROM models WHERE id=?").run(id).changes > 0;
+    const owner = ownerClause(this.scope);
+    return this.db.prepare(`DELETE FROM models WHERE id=?${owner.sql}`).run(id, ...owner.params).changes > 0;
   }
   private writeModel(record: ModelRecord): void {
-    this.db.prepare(`INSERT INTO models (id,name,spec_json,notes,reference_face_path,reference_face_hash,created_at,updated_at)
-      VALUES (@id,@name,@spec,@notes,@referenceFacePath,@referenceFaceHash,@createdAt,@updatedAt)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name,spec_json=excluded.spec_json,notes=excluded.notes,reference_face_path=excluded.reference_face_path,reference_face_hash=excluded.reference_face_hash,updated_at=excluded.updated_at`)
-      .run({ ...record, spec: json(record.spec) });
+    // 身份维度同时落列：资产库按身份筛选走普通等值比较，不再从 spec_json 里提取。
+    this.db.prepare(`INSERT INTO models (id,owner_id,name,spec_json,notes,reference_face_path,reference_face_hash,gender,age,heritage,stature,build,created_at,updated_at)
+      VALUES (@id,@ownerId,@name,@spec,@notes,@referenceFacePath,@referenceFaceHash,@gender,@age,@heritage,@stature,@build,@createdAt,@updatedAt)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,spec_json=excluded.spec_json,notes=excluded.notes,reference_face_path=excluded.reference_face_path,reference_face_hash=excluded.reference_face_hash,gender=excluded.gender,age=excluded.age,heritage=excluded.heritage,stature=excluded.stature,build=excluded.build,updated_at=excluded.updated_at`)
+      .run({ ...record, ownerId: ownerValue(this.scope), spec: json(record.spec), ...identityColumns(record.spec) });
   }
 
   public listModelPortraits(modelId: string): ModelPortraitRecord[] {
-    return (this.db.prepare("SELECT * FROM model_portraits WHERE model_id=? ORDER BY created_at DESC, id DESC").all(modelId) as Row[]).map(mapModelPortrait);
+    const owner = ownerClause(this.scope, "m.owner_id");
+    return (this.db.prepare(`SELECT mp.* FROM model_portraits mp JOIN models m ON m.id=mp.model_id WHERE mp.model_id=?${owner.sql} ORDER BY mp.created_at DESC, mp.id DESC`)
+      .all(modelId, ...owner.params) as Row[]).map(mapModelPortrait);
   }
   public getModelPortrait(portraitId: string): ModelPortraitRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM model_portraits WHERE id=?").get(portraitId);
+    const owner = ownerClause(this.scope, "m.owner_id");
+    const row = this.db.prepare(`SELECT mp.* FROM model_portraits mp JOIN models m ON m.id=mp.model_id WHERE mp.id=?${owner.sql}`).get(portraitId, ...owner.params);
     return row ? mapModelPortrait(row as Row) : undefined;
   }
   /** Worker 落库一张候选定妆照；同 hash 已存在时幂等返回既有行，避免重试产生重复图。 */
   public createModelPortrait(input: Omit<ModelPortraitRecord, "id" | "selected" | "createdAt">): ModelPortraitRecord {
     const existing = this.db.prepare("SELECT * FROM model_portraits WHERE model_id=? AND hash=? LIMIT 1").get(input.modelId, input.hash) as Row | undefined;
     if (existing) return mapModelPortrait(existing);
-    const record: ModelPortraitRecord = { ...input, id: randomUUID(), selected: false, createdAt: now() };
+    const record: ModelPortraitRecord = { ...input, id: newId(), selected: false, createdAt: now() };
     this.db.prepare(`INSERT INTO model_portraits (id,model_id,job_id,storage_path,hash,width,height,provider_id,image_model_id,aspect_ratio,selected,created_at)
       VALUES (@id,@modelId,@jobId,@storagePath,@hash,@width,@height,@providerId,@imageModelId,@aspectRatio,0,@createdAt)`).run(record);
     return record;
@@ -97,16 +107,29 @@ export class ModelRepository {
     return "selected";
   }
   public deleteModelPortrait(portraitId: string): boolean {
-    return this.db.prepare("DELETE FROM model_portraits WHERE id=?").run(portraitId).changes > 0;
+    const owner = ownerClause(this.scope, "m.owner_id");
+    return this.db.prepare(`DELETE FROM model_portraits WHERE id IN (SELECT mp.id FROM model_portraits mp JOIN models m ON m.id=mp.model_id WHERE mp.id=?${owner.sql})`)
+      .run(portraitId, ...owner.params).changes > 0;
   }
   /** 全部定妆照：模特列表一次取回后按模特分组，避免逐个模特各查一次。 */
   public listAllModelPortraits(): ModelPortraitRecord[] {
-    return (this.db.prepare("SELECT * FROM model_portraits ORDER BY created_at DESC, id DESC").all() as Row[]).map(mapModelPortrait);
+    const owner = ownerClause(this.scope, "m.owner_id");
+    return (this.db.prepare(`SELECT mp.* FROM model_portraits mp JOIN models m ON m.id=mp.model_id WHERE 1=1${owner.sql} ORDER BY mp.created_at DESC, mp.id DESC`)
+      .all(...owner.params) as Row[]).map(mapModelPortrait);
   }
   /** 指纹复用判定用：某次选角任务当前还挂着的候选定妆照。 */
   public listModelPortraitsByJobId(jobId: string): ModelPortraitRecord[] {
-    return (this.db.prepare("SELECT * FROM model_portraits WHERE job_id=? ORDER BY created_at DESC, id DESC").all(jobId) as Row[]).map(mapModelPortrait);
+    const owner = ownerClause(this.scope, "m.owner_id");
+    return (this.db.prepare(`SELECT mp.* FROM model_portraits mp JOIN models m ON m.id=mp.model_id WHERE mp.job_id=?${owner.sql} ORDER BY mp.created_at DESC, mp.id DESC`)
+      .all(jobId, ...owner.params) as Row[]).map(mapModelPortrait);
   }
+}
+
+/** 把 spec 的身份维度抽成列值；缺失的维度写 NULL，与「未标注」同义。 */
+function identityColumns(spec: unknown): Record<string, string | null> {
+  const source = (spec ?? {}) as Record<string, unknown>;
+  const pick = (key: string): string | null => (typeof source[key] === 'string' ? (source[key] as string) : null);
+  return { gender: pick('gender'), age: pick('age'), heritage: pick('heritage'), stature: pick('stature'), build: pick('build') };
 }
 
 function mapModel(row: Row): ModelRecord { return { id: String(row.id), name: String(row.name), spec: parse(row.spec_json), notes: String(row.notes ?? ""), referenceFacePath: row.reference_face_path == null ? null : String(row.reference_face_path), referenceFaceHash: row.reference_face_hash == null ? null : String(row.reference_face_hash), createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }

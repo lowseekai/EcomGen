@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { CopywritingTarget, JobStatus, JobType } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, isVisible, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 /** 写入 jobs.provider_task_id 的内部标记：请求已发出但 Provider 尚未返回结果。 */
@@ -8,6 +9,8 @@ export const EXTERNAL_REQUEST_STARTED = "__EXTERNAL_REQUEST_STARTED__";
 
 export interface JobRecord {
   id: string;
+  /** 发起该任务的用户；Worker 以该身份执行，产出的实体才带正确归属。 */
+  ownerId: string | null;
   /** 全局套图反推任务不绑定项目，projectId 为 null。 */
   projectId: string | null;
   storyboardItemId: string | null;
@@ -66,14 +69,14 @@ export interface WebResearchAttemptRecord {
 }
 
 export class JobRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
-  public createJob(input: Omit<JobRecord, "createdAt" | "updatedAt" | "progress" | "status" | "retryable" | "providerTaskId" | "error" | "requestFingerprint" | "providerId" | "modelId" | "estimatedCost" | "actualCost" | "cancelRequested" | "progressDetail"> & Partial<Pick<JobRecord, "status" | "progress" | "retryable" | "providerTaskId" | "error" | "requestFingerprint" | "providerId" | "modelId" | "estimatedCost" | "actualCost" | "cancelRequested" | "progressDetail">>): JobRecord {
-    const record: JobRecord = { ...input, status: input.status ?? "QUEUED", progress: input.progress ?? 0, retryable: input.retryable ?? true, requestFingerprint: input.requestFingerprint ?? null, providerId: input.providerId ?? null, modelId: input.modelId ?? null, estimatedCost: input.estimatedCost ?? null, actualCost: input.actualCost ?? null, cancelRequested: input.cancelRequested ?? false, providerTaskId: input.providerTaskId ?? null, error: input.error ?? null, progressDetail: input.progressDetail ?? null, createdAt: now(), updatedAt: now() };
-    this.db.prepare(`INSERT INTO jobs (id,project_id,storyboard_item_id,type,status,progress,retryable,input_json,request_fingerprint,provider_id,model_id,estimated_cost_json,actual_cost_json,cancel_requested,provider_task_id,error_json,created_at,updated_at)
-      VALUES (@id,@projectId,@storyboardItemId,@type,@status,@progress,@retryable,@input,@requestFingerprint,@providerId,@modelId,@estimatedCost,@actualCost,@cancelRequested,@providerTaskId,@error,@createdAt,@updatedAt)`).run({ ...record, retryable: record.retryable ? 1 : 0, cancelRequested: record.cancelRequested ? 1 : 0, input: json(record.input), estimatedCost: record.estimatedCost ? json(record.estimatedCost) : null, actualCost: record.actualCost ? json(record.actualCost) : null, error: record.error ? json(record.error) : null }); return record;
+  public createJob(input: Omit<JobRecord, "ownerId" | "createdAt" | "updatedAt" | "progress" | "status" | "retryable" | "providerTaskId" | "error" | "requestFingerprint" | "providerId" | "modelId" | "estimatedCost" | "actualCost" | "cancelRequested" | "progressDetail"> & Partial<Pick<JobRecord, "status" | "progress" | "retryable" | "providerTaskId" | "error" | "requestFingerprint" | "providerId" | "modelId" | "estimatedCost" | "actualCost" | "cancelRequested" | "progressDetail">>): JobRecord {
+    const record: JobRecord = { ...input, ownerId: ownerValue(this.scope), status: input.status ?? "QUEUED", progress: input.progress ?? 0, retryable: input.retryable ?? true, requestFingerprint: input.requestFingerprint ?? null, providerId: input.providerId ?? null, modelId: input.modelId ?? null, estimatedCost: input.estimatedCost ?? null, actualCost: input.actualCost ?? null, cancelRequested: input.cancelRequested ?? false, providerTaskId: input.providerTaskId ?? null, error: input.error ?? null, progressDetail: input.progressDetail ?? null, createdAt: now(), updatedAt: now() };
+    this.db.prepare(`INSERT INTO jobs (id,owner_id,project_id,storyboard_item_id,type,status,progress,retryable,input_json,request_fingerprint,provider_id,model_id,estimated_cost_json,actual_cost_json,cancel_requested,provider_task_id,error_json,created_at,updated_at)
+      VALUES (@id,@ownerId,@projectId,@storyboardItemId,@type,@status,@progress,@retryable,@input,@requestFingerprint,@providerId,@modelId,@estimatedCost,@actualCost,@cancelRequested,@providerTaskId,@error,@createdAt,@updatedAt)`).run({ ...record, ownerId: ownerValue(this.scope), retryable: record.retryable ? 1 : 0, cancelRequested: record.cancelRequested ? 1 : 0, input: json(record.input), estimatedCost: record.estimatedCost ? json(record.estimatedCost) : null, actualCost: record.actualCost ? json(record.actualCost) : null, error: record.error ? json(record.error) : null }); return record;
   }
-  public getJob(id: string): JobRecord | undefined { const row = this.db.prepare("SELECT * FROM jobs WHERE id=?").get(id); return row ? mapJob(row as Row) : undefined; }
+  public getJob(id: string): JobRecord | undefined { const row = this.db.prepare("SELECT * FROM jobs WHERE id=?").get(id) as Row | undefined; return row && isVisible(this.scope, row.owner_id as string | null) ? mapJob(row as Row) : undefined; }
   public updateJob(id: string, patch: Partial<Pick<JobRecord, "status" | "progress" | "providerTaskId" | "error" | "retryable" | "actualCost" | "cancelRequested" | "progressDetail">>): JobRecord | undefined {
     const current = this.getJob(id); if (!current) return undefined; const next = { ...current, ...patch, updatedAt: now() };
     this.db.prepare("UPDATE jobs SET status=@status,progress=@progress,retryable=@retryable,provider_task_id=@providerTaskId,error_json=@error,actual_cost_json=@actualCost,cancel_requested=@cancelRequested,progress_detail_json=@progressDetail,updated_at=@updatedAt WHERE id=@id")
@@ -115,7 +118,7 @@ export class JobRepository {
     write();
     return recovered.map((row) => mapJob({ ...row, status: "QUEUED", progress: 0, cancel_requested: 0 }));
   }
-  public listJobs(projectId: string): JobRecord[] { return (this.db.prepare("SELECT * FROM jobs WHERE project_id=? ORDER BY created_at DESC").all(projectId) as Row[]).map(mapJob); }
+  public listJobs(projectId: string): JobRecord[] { return (this.db.prepare("SELECT * FROM jobs WHERE project_id=? ORDER BY created_at DESC").all(projectId) as Row[]).filter((row) => isVisible(this.scope, row.owner_id as string | null)).map(mapJob); }
   /** 全局套图反推任务不绑定项目，无法走 listJobs；按 type 倒序取最近若干条供「最近反推」列表使用。 */
   public listJobsByType(type: JobType, limit: number): JobRecord[] { return (this.db.prepare("SELECT * FROM jobs WHERE type=? ORDER BY created_at DESC LIMIT ?").all(type, limit) as Row[]).map(mapJob); }
   /**
@@ -130,9 +133,13 @@ export class JobRepository {
     const rows = this.db.prepare(`SELECT * FROM jobs WHERE id IN (${placeholders})`).all(...unique) as Row[];
     return new Map(rows.map((row) => { const job = mapJob(row); return [job.id, job]; }));
   }
+  /** 并发配额用：只数仍在队列或执行中的任务；已结束的不占额度，否则跑满一次就永久卡死。 */
+  public countActiveJobs(ownerId: string): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE owner_id=? AND status IN ('QUEUED','RUNNING')").get(ownerId) as { n: number }).n;
+  }
   public saveCopywritingResult(input: Omit<CopywritingResultRecord, "createdAt">): CopywritingResultRecord {
     const record: CopywritingResultRecord = { ...input, createdAt: now() };
-    this.db.prepare("INSERT OR REPLACE INTO copywriting_results (job_id,project_id,target,content,created_at) VALUES (@jobId,@projectId,@target,@content,@createdAt)").run(record);
+    this.db.prepare("INSERT INTO copywriting_results (job_id,project_id,target,content,created_at) VALUES (@jobId,@projectId,@target,@content,@createdAt) ON CONFLICT(job_id) DO UPDATE SET project_id=excluded.project_id, target=excluded.target, content=excluded.content, created_at=excluded.created_at").run(record);
     return record;
   }
   public getCopywritingResult(jobId: string): CopywritingResultRecord | undefined {
@@ -141,14 +148,14 @@ export class JobRepository {
   }
   public createWebResearchAudit(jobId: string, availability: WebResearchAvailability): WebResearchAuditRecord {
     const record: WebResearchAuditRecord = { jobId, availability, invocationCount: 0, successfulAttemptCount: 0, failedAttemptCount: 0, createdAt: now(), updatedAt: now() };
-    this.db.prepare("INSERT OR REPLACE INTO web_research_audits (job_id,availability,invocation_count,successful_attempt_count,failed_attempt_count,created_at,updated_at) VALUES (@jobId,@availability,@invocationCount,@successfulAttemptCount,@failedAttemptCount,@createdAt,@updatedAt)").run(record);
+    this.db.prepare("INSERT INTO web_research_audits (job_id,availability,invocation_count,successful_attempt_count,failed_attempt_count,created_at,updated_at) VALUES (@jobId,@availability,@invocationCount,@successfulAttemptCount,@failedAttemptCount,@createdAt,@updatedAt) ON CONFLICT(job_id) DO UPDATE SET availability=excluded.availability, invocation_count=excluded.invocation_count, successful_attempt_count=excluded.successful_attempt_count, failed_attempt_count=excluded.failed_attempt_count, updated_at=excluded.updated_at").run(record);
     return record;
   }
   public recordWebResearchSearch(jobId: string): void {
     this.db.prepare("UPDATE web_research_audits SET invocation_count=invocation_count+1,updated_at=? WHERE job_id=?").run(now(), jobId);
   }
   public recordWebResearchAttempt(input: Omit<WebResearchAttemptRecord, "id" | "createdAt">): WebResearchAttemptRecord {
-    const record: WebResearchAttemptRecord = { ...input, id: randomUUID(), createdAt: now() };
+    const record: WebResearchAttemptRecord = { ...input, id: newId(), createdAt: now() };
     const column = record.status === "SUCCEEDED" ? "successful_attempt_count" : "failed_attempt_count";
     const write = this.db.transaction(() => {
       this.db.prepare("INSERT INTO web_research_attempts (id,job_id,query,source_id,source_name,source_kind,status,result_count,error_message,created_at) VALUES (@id,@jobId,@query,@sourceId,@sourceName,@sourceKind,@status,@resultCount,@errorMessage,@createdAt)").run(record);
@@ -158,10 +165,10 @@ export class JobRepository {
   }
   public getWebResearchAudit(jobId: string): WebResearchAuditRecord | undefined { const row = this.db.prepare("SELECT * FROM web_research_audits WHERE job_id=?").get(jobId); return row ? mapWebResearchAudit(row as Row) : undefined; }
   /** 审计记录按插入顺序返回，避免同一毫秒内的随机 UUID 改变来源尝试顺序。 */
-  public listWebResearchAttempts(jobId: string): WebResearchAttemptRecord[] { return (this.db.prepare("SELECT * FROM web_research_attempts WHERE job_id=? ORDER BY rowid").all(jobId) as Row[]).map(mapWebResearchAttempt); }
+  public listWebResearchAttempts(jobId: string): WebResearchAttemptRecord[] { return (this.db.prepare("SELECT * FROM web_research_attempts WHERE job_id=? ORDER BY id").all(jobId) as Row[]).map(mapWebResearchAttempt); }
 }
 
-function mapJob(row: Row): JobRecord { return { id: String(row.id), projectId: row.project_id == null ? null : String(row.project_id), storyboardItemId: row.storyboard_item_id ? String(row.storyboard_item_id) : null, type: row.type as JobType, status: row.status as JobStatus, progress: Number(row.progress), retryable: Boolean(row.retryable), input: parse(row.input_json), requestFingerprint: row.request_fingerprint ? String(row.request_fingerprint) : null, providerId: row.provider_id ? String(row.provider_id) : null, modelId: row.model_id ? String(row.model_id) : null, estimatedCost: row.estimated_cost_json ? parse(row.estimated_cost_json) : null, actualCost: row.actual_cost_json ? parse(row.actual_cost_json) : null, cancelRequested: Boolean(row.cancel_requested), providerTaskId: row.provider_task_id ? String(row.provider_task_id) : null, error: row.error_json ? parse(row.error_json) : null, progressDetail: row.progress_detail_json ? parse(row.progress_detail_json) : null, createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }
+function mapJob(row: Row): JobRecord { return { id: String(row.id), ownerId: row.owner_id == null ? null : String(row.owner_id), projectId: row.project_id == null ? null : String(row.project_id), storyboardItemId: row.storyboard_item_id ? String(row.storyboard_item_id) : null, type: row.type as JobType, status: row.status as JobStatus, progress: Number(row.progress), retryable: Boolean(row.retryable), input: parse(row.input_json), requestFingerprint: row.request_fingerprint ? String(row.request_fingerprint) : null, providerId: row.provider_id ? String(row.provider_id) : null, modelId: row.model_id ? String(row.model_id) : null, estimatedCost: row.estimated_cost_json ? parse(row.estimated_cost_json) : null, actualCost: row.actual_cost_json ? parse(row.actual_cost_json) : null, cancelRequested: Boolean(row.cancel_requested), providerTaskId: row.provider_task_id ? String(row.provider_task_id) : null, error: row.error_json ? parse(row.error_json) : null, progressDetail: row.progress_detail_json ? parse(row.progress_detail_json) : null, createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }
 function mapCopywritingResult(row: Row): CopywritingResultRecord { return { jobId: String(row.job_id), projectId: String(row.project_id), target: row.target as CopywritingTarget, content: String(row.content), createdAt: String(row.created_at) }; }
 function mapWebResearchAudit(row: Row): WebResearchAuditRecord { return { jobId: String(row.job_id), availability: row.availability as WebResearchAvailability, invocationCount: Number(row.invocation_count), successfulAttemptCount: Number(row.successful_attempt_count), failedAttemptCount: Number(row.failed_attempt_count), createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }
 function mapWebResearchAttempt(row: Row): WebResearchAttemptRecord { return { id: String(row.id), jobId: String(row.job_id), query: String(row.query), sourceId: String(row.source_id), sourceName: String(row.source_name), sourceKind: String(row.source_kind), status: row.status as WebResearchAttemptStatus, resultCount: Number(row.result_count), errorMessage: row.error_message ? String(row.error_message) : null, createdAt: String(row.created_at) }; }

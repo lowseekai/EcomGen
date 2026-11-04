@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ImageAspectRatio,
   ImageResolution,
@@ -6,6 +5,8 @@ import type {
   StoryboardShotRole,
 } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, ownerClause, type ScopeInput } from "../scope.js";
 import type { ProjectRepository } from "./projectRepository.js";
 import { type Row, json, now, parse } from "./internal.js";
 
@@ -46,7 +47,14 @@ export interface StoryboardItemRecord {
 
 export class StoryboardRepository {
   /** 新建分镜要继承项目的模型/分辨率默认值：注入项目仓库做存在性校验与默认值读取。 */
-  public constructor(private readonly db: SqliteDatabase, private readonly projects: Pick<ProjectRepository, "getProject">) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE, private readonly projects: Pick<ProjectRepository, "getProject">) { }
+
+  /** 子表没有 owner_id：归属经父项目推导。找不到父项目即视为不可见。 */
+  private visibleProject(projectId: string | null | undefined): boolean {
+    if (!projectId) return false;
+    const owner = ownerClause(this.scope, "owner_id");
+    return this.db.prepare(`SELECT 1 FROM projects WHERE id=?${owner.sql}`).get(projectId, ...owner.params) !== undefined;
+  }
 
   public getStoryboard(projectId: string): StoryboardRecord | undefined { const row = this.db.prepare("SELECT * FROM storyboards WHERE project_id=?").get(projectId); return row ? mapStoryboard(row as Row) : undefined; }
   public saveStoryboard(projectId: string, campaignStyleLock: string, status: StoryboardRecord["status"], items: Array<Omit<StoryboardItemRecord, "id" | "projectId" | "storyboardVersion" | "createdAt" | "updatedAt" | "imageProviderId" | "imageModelId" | "imageResolution" | "imageAspectRatio"> & Partial<Pick<StoryboardItemRecord, "imageProviderId" | "imageModelId" | "imageResolution" | "imageAspectRatio">>>): StoryboardRecord {
@@ -67,7 +75,7 @@ export class StoryboardRepository {
         imageModelId: item.imageModelId ?? project.imageModelId,
         imageResolution: item.imageResolution ?? project.imageResolution,
         imageAspectRatio: item.imageAspectRatio ?? project.imageAspectRatio,
-        id: randomUUID(),
+        id: newId(),
         projectId,
         storyboardVersion: storyboard.version,
         sortOrder: sortOffset + (item.sortOrder ?? index),
@@ -79,13 +87,13 @@ export class StoryboardRepository {
       }));
     }); write(); return storyboard;
   }
-  public listStoryboardItems(projectId: string): StoryboardItemRecord[] { return (this.db.prepare("SELECT * FROM storyboard_items WHERE project_id=? ORDER BY sort_order").all(projectId) as Row[]).map(mapStoryboardItem); }
-  public getStoryboardItem(id: string): StoryboardItemRecord | undefined { const row = this.db.prepare("SELECT * FROM storyboard_items WHERE id=?").get(id); return row ? mapStoryboardItem(row as Row) : undefined; }
+  public listStoryboardItems(projectId: string): StoryboardItemRecord[] { if (!this.visibleProject(projectId)) return []; return (this.db.prepare("SELECT * FROM storyboard_items WHERE project_id=? ORDER BY sort_order").all(projectId) as Row[]).map(mapStoryboardItem); }
+  public getStoryboardItem(id: string): StoryboardItemRecord | undefined { const row = this.db.prepare("SELECT * FROM storyboard_items WHERE id=?").get(id) as Row | undefined; return row && this.visibleProject(row.project_id as string) ? mapStoryboardItem(row as Row) : undefined; }
   public deleteStoryboardItem(id: string): StoryboardItemRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM storyboard_items WHERE id=?").get(id);
-    if (!row) return undefined;
+    const existing = this.getStoryboardItem(id);
+    if (!existing) return undefined;
     this.db.prepare("DELETE FROM storyboard_items WHERE id=?").run(id);
-    return mapStoryboardItem(row as Row);
+    return existing;
   }
   public updateStoryboardItem(id: string, patch: Partial<Pick<StoryboardItemRecord, "assetType" | "displayName" | "templateVariant" | "candidateCount" | "imageProviderId" | "imageModelId" | "imageResolution" | "imageAspectRatio" | "referencedAssets" | "mode" | "promptInstruction" | "compiledPrompt" | "status" | "sortOrder" | "factClaims" | "riskFlags">>): StoryboardItemRecord | undefined {
     const current = this.getStoryboardItem(id); if (!current) return undefined; const next = { ...current, ...patch, updatedAt: now() };

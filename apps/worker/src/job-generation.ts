@@ -90,6 +90,8 @@ export async function executeGeneration(ctx: WorkerContext, job: JobRecord, sign
     generationKey,
     generationBatchId,
   });
+  // 生成图是存储占用的大头：写行时立刻按内存里的字节数记账，别等定期重算。
+  repository.recordStorageSize("outputs", output.id, normalized.image.byteLength);
   await updateJob(job, { providerTaskId: null });
   repository.updateStoryboardItem(item.id, { status: "GENERATED" }); await events.publish(project.id, "output.created", { output });
 }

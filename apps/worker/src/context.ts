@@ -203,13 +203,43 @@ const CANCEL_POLL_INTERVAL_MS = 2_000;
  * 照常计费，拿到结果后又被取消检查丢弃。这里以 JobCancelled 作为中断原因：fetch 会把
  * abort reason 原样抛出，因此任务级 catch 能按既有取消分支落为 CANCELLED，不会被记为失败。
  */
+/**
+ * 单个任务的墙钟上限。
+ *
+ * Node 的 fetch 没有默认超时；Provider 侧挂起（TCP 连上但不返回）会让 await 永不 settle。
+ * 没有这条上限，两个挂起的任务就能把 Worker 完全堵死，而用户只看到"一直在生成"。
+ */
+const JOB_TIMEOUT_MS = readJobTimeout(process.env.WORKER_JOB_TIMEOUT_MS);
+
+/**
+ * 解析超时配置。
+ *
+ * 空串与非法值一律退回默认值：环境变量存在但为空（例如 compose 里漏写了默认表达式）
+ * 时 `Number("")` 是 0，setTimeout(0) 会让**每一个任务刚启动就被中止**。
+ */
+export function readJobTimeout(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 15 * 60_000;
+}
+
+/** 任务超时。与 JobCancelled 区分：它应当按失败处理（可重试、按策略退款），而不是按取消。 */
+export class JobTimeout extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = "JobTimeout";
+  }
+}
+
 export function startJobCancellation(repository: EcomRepository, job: JobRecord): { signal: AbortSignal; dispose: () => void } {
   const controller = new AbortController();
   const timer = setInterval(() => {
     const current = repository.getJob(job.id);
     if (current?.cancelRequested || current?.status === "CANCELLED") controller.abort(new JobCancelled(`Job ${job.id} was cancelled`));
   }, CANCEL_POLL_INTERVAL_MS);
+  // 墙钟上限与取消共用同一个 signal：上层不必区分两种中断，只需要知道"这次执行要停"。
+  const timeout = setTimeout(() => controller.abort(new JobTimeout(`Job ${job.id} exceeded ${JOB_TIMEOUT_MS}ms`)), JOB_TIMEOUT_MS);
+  timeout.unref();
   // 轮询不应阻止进程退出；dispose 仍负责在任务结束后清掉定时器。
   timer.unref();
-  return { signal: controller.signal, dispose: () => clearInterval(timer) };
+  return { signal: controller.signal, dispose: () => { clearInterval(timer); clearTimeout(timeout); } };
 }

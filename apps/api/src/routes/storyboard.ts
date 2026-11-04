@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { JobRecord } from "@ecomgen/core";
 import { requestFingerprint } from "@ecomgen/core";
+import { createChargedJob } from "../charged-jobs.js";
 import { getTemplate, isUserTemplateId } from "@ecomgen/ecom-skill";
 import {
   ConfirmStoryboardInput,
@@ -128,7 +129,9 @@ export function registerStoryboardRoutes(app: FastifyInstance, ctx: ApiContext):
           const fingerprint = requestFingerprint({ type: "GENERATE", projectId, itemId: item.id, storyboardVersion: storyboard.version, itemUpdatedAt: item.updatedAt, providerId: effectiveProviderId, modelId: effectiveModelId, input: fingerprintInput, idempotencyKey: request.headers["idempotency-key"] ?? null });
           const existing = repository.findJobByFingerprint(projectId, fingerprint);
           if (existing) { jobs.push(existing); continue; }
-          const job = repository.createJob({ id: randomUUID(), projectId, storyboardItemId: item.id, type: "GENERATE", input, requestFingerprint: fingerprint, providerId: effectiveProviderId, modelId: effectiveModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } });
+          // 生成是唯一真正按张扣费的入口：走 createChargedJob，报价/扣费/落任务一次完成。
+          // 抛错（价目缺失、积分不足、并发超限）会让外层事务连同已扣积分一起回滚。
+          const job = createChargedJob(ctx, request, { id: randomUUID(), projectId, storyboardItemId: item.id, type: "GENERATE", input, requestFingerprint: fingerprint, providerId: effectiveProviderId, modelId: effectiveModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } }, { kind: "image", providerId: effectiveProviderId, modelId: effectiveModelId, units: 1, resolution: input.imageResolution });
           jobs.push(job); created.push(job);
         }
       }

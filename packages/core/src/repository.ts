@@ -65,8 +65,56 @@ import {
   type UserSuiteRecord,
   type UserTemplateRecord,
 } from "./repositories/userContentRepository.js";
+import {
+  UserRepository,
+  normalizeEmail,
+  type AuditEventInput,
+  type LoginEventInput,
+  type SessionRecord,
+  type UserListQuery,
+  type UserRecord,
+  type UserRole,
+  type UserStatus,
+} from "./repositories/userRepository.js";
+import {
+  CreditRepository,
+  MICROCREDITS_PER_CREDIT,
+  type CreditEntryInput,
+  type CreditEntryRecord,
+  type CreditLedgerType,
+} from "./repositories/creditRepository.js";
+import {
+  PlanRepository,
+  FALLBACK_ENTITLEMENTS,
+  UNLIMITED_ENTITLEMENTS,
+  mergeEntitlements,
+  type Entitlements,
+  type ImageResolutionCap,
+  type PlanRecord,
+  type SubscriptionRecord,
+  type SubscriptionStatus,
+} from "./repositories/planRepository.js";
+import {
+  BillingRepository,
+  type BillingOrderRecord,
+  type BillingStatus,
+  type PricingMode,
+  type ProviderModelPriceRecord,
+} from "./repositories/billingRepository.js";
+import {
+  PaymentRepository,
+  type PaymentNotificationStatus,
+  type PaymentOrderRecord,
+  type PaymentOrderStatus,
+} from "./repositories/paymentRepository.js";
+import { AdminRepository, type AdminOverview } from "./repositories/adminRepository.js";
+import { StorageRepository, type SizedTable } from "./repositories/storageRepository.js";
+import { SYSTEM_SCOPE, ownerScope, resolveScope, type RepositoryScope, type ScopeInput } from "./scope.js";
 
+export * from "./repositories/adminRepository.js";
 export * from "./repositories/assetRepository.js";
+export * from "./repositories/billingRepository.js";
+export * from "./repositories/creditRepository.js";
 export * from "./repositories/editSessionRepository.js";
 export * from "./repositories/exportRepository.js";
 export * from "./repositories/jobRepository.js";
@@ -76,11 +124,15 @@ export * from "./repositories/outputRepository.js";
 export * from "./repositories/patternDraftRepository.js";
 export * from "./repositories/patternPipelineRepository.js";
 export * from "./repositories/patternRepository.js";
+export * from "./repositories/paymentRepository.js";
+export * from "./repositories/planRepository.js";
 export * from "./repositories/projectRepository.js";
 export * from "./repositories/providerRepository.js";
 export * from "./repositories/searchSourceRepository.js";
+export * from "./repositories/storageRepository.js";
 export * from "./repositories/storyboardRepository.js";
 export * from "./repositories/userContentRepository.js";
+export * from "./repositories/userRepository.js";
 
 /**
  * 领域持久化的唯一门面：按聚合根组合各子仓库（providers、models、patterns、jobs、projects……）。
@@ -107,23 +159,30 @@ export class EcomRepository {
   private readonly editSessions: EditSessionRepository;
   private readonly exports: ExportRepository;
   private readonly library: LibraryRepository;
+  private readonly users: UserRepository;
+  private readonly credits: CreditRepository;
+  private readonly plans: PlanRepository;
+  private readonly billing: BillingRepository;
+  private readonly payments: PaymentRepository;
+  private readonly storage: StorageRepository;
+  private readonly admin: AdminRepository;
 
-  public constructor(db: SqliteDatabase) {
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) {
     this.providers = new ProviderRepository(db);
     this.searchSources = new SearchSourceRepository(db);
-    this.userContent = new UserContentRepository(db);
-    this.models = new ModelRepository(db);
-    this.patterns = new PatternRepository(db);
-    this.drafts = new PatternDraftRepository(db);
-    this.pipelines = new PatternPipelineRepository(db);
-    this.projects = new ProjectRepository(db);
-    this.assets = new AssetRepository(db);
-    this.storyboards = new StoryboardRepository(db, this.projects);
-    this.jobs = new JobRepository(db);
-    this.outputs = new OutputRepository(db);
-    this.editSessions = new EditSessionRepository(db);
-    this.exports = new ExportRepository(db);
-    this.library = new LibraryRepository(db, {
+    this.userContent = new UserContentRepository(db, scope);
+    this.models = new ModelRepository(db, scope);
+    this.patterns = new PatternRepository(db, scope);
+    this.drafts = new PatternDraftRepository(db, scope);
+    this.pipelines = new PatternPipelineRepository(db, scope);
+    this.projects = new ProjectRepository(db, scope);
+    this.assets = new AssetRepository(db, scope);
+    this.storyboards = new StoryboardRepository(db, scope, this.projects);
+    this.jobs = new JobRepository(db, scope);
+    this.outputs = new OutputRepository(db, scope);
+    this.editSessions = new EditSessionRepository(db, scope);
+    this.exports = new ExportRepository(db, scope);
+    this.library = new LibraryRepository(db, scope, {
       getAsset: (id) => this.assets.getAsset(id),
       getOutput: (id) => this.outputs.getOutput(id),
       getLayerExport: (id) => this.exports.getLayerExport(id),
@@ -132,7 +191,27 @@ export class EcomRepository {
       getModelPortrait: (id) => this.models.getModelPortrait(id),
       getModel: (id) => this.models.getModel(id),
     });
+    this.users = new UserRepository(db);
+    this.credits = new CreditRepository(db);
+    this.plans = new PlanRepository(db);
+    this.billing = new BillingRepository(db);
+    this.payments = new PaymentRepository(db);
+    this.storage = new StorageRepository(db);
+    this.admin = new AdminRepository(db);
   }
+
+  /**
+   * 派生一个绑定到指定所有者的仓储实例。
+   *
+   * 共享同一个 db 连接，因此事务边界与改造前一致；只是每条查询多带一个归属谓词。
+   * 请求期通常不需要它——`buildApi` 交给路由的实例已经从请求上下文取作用域（见 scope.ts）。
+   */
+  public forOwner(ownerId: string): EcomRepository {
+    return new EcomRepository(this.db, ownerScope(ownerId));
+  }
+
+  /** 当前作用域，仅供诊断与测试断言使用。 */
+  public get currentScope(): RepositoryScope { return resolveScope(this.scope); }
 
   // ---- providers ----
   public listProviders(): ProviderRecord[] { return this.providers.listProviders(); }
@@ -280,6 +359,7 @@ export class EcomRepository {
   public recoverInterruptedJobs(): JobRecord[] { return this.jobs.recoverInterruptedJobs(); }
   public listJobs(projectId: string): JobRecord[] { return this.jobs.listJobs(projectId); }
   public listJobsByType(type: Parameters<JobRepository["listJobsByType"]>[0], limit: number): JobRecord[] { return this.jobs.listJobsByType(type, limit); }
+  public countActiveJobs(ownerId: string): number { return this.jobs.countActiveJobs(ownerId); }
   public listJobsByIds(ids: readonly string[]): Map<string, JobRecord> { return this.jobs.listJobsByIds(ids); }
   public saveCopywritingResult(input: Parameters<JobRepository["saveCopywritingResult"]>[0]): CopywritingResultRecord { return this.jobs.saveCopywritingResult(input); }
   public getCopywritingResult(jobId: string): CopywritingResultRecord | undefined { return this.jobs.getCopywritingResult(jobId); }
@@ -329,4 +409,85 @@ export class EcomRepository {
   public getLayerExportByOutput(outputId: string): LayerExportRecord | undefined { return this.exports.getLayerExportByOutput(outputId); }
   public listLayerExportsByOutput(outputId: string): LayerExportRecord[] { return this.exports.listLayerExportsByOutput(outputId); }
   public updateLayerExport(id: string, patch: Parameters<ExportRepository["updateLayerExport"]>[1]): LayerExportRecord | undefined { return this.exports.updateLayerExport(id, patch); }
+
+  // ---- users / sessions ----
+  public createUser(input: Parameters<UserRepository["createUser"]>[0]): UserRecord { return this.users.createUser(input); }
+  public getUser(id: string): UserRecord | undefined { return this.users.getUser(id); }
+  public getUserByEmail(email: string): UserRecord | undefined { return this.users.getUserByEmail(normalizeEmail(email)); }
+  public countUsers(): number { return this.users.countUsers(); }
+  public listUsers(query: UserListQuery): { items: UserRecord[]; total: number } { return this.users.listUsers(query); }
+  public updateUser(id: string, patch: Partial<Pick<UserRecord, "displayName" | "role" | "status" | "passwordHash" | "emailVerifiedAt">>): UserRecord | undefined { return this.users.updateUser(id, patch); }
+  public deleteUser(id: string): boolean { return this.users.deleteUser(id); }
+  public createSession(input: Parameters<UserRepository["createSession"]>[0]): SessionRecord { return this.users.createSession(input); }
+  public findActiveSession(tokenHash: string): { session: SessionRecord; user: UserRecord } | undefined { return this.users.findActiveSession(tokenHash); }
+  public touchSession(id: string): void { return this.users.touchSession(id); }
+  public revokeSession(id: string): void { return this.users.revokeSession(id); }
+  public revokeUserSessions(userId: string): number { return this.users.revokeUserSessions(userId); }
+  public listUserSessions(userId: string): SessionRecord[] { return this.users.listUserSessions(userId); }
+  public createPasswordResetToken(userId: string, tokenHash: string, expiresAt: string): string { return this.users.createPasswordResetToken(userId, tokenHash, expiresAt); }
+  public consumePasswordResetToken(tokenHash: string): string | undefined { return this.users.consumePasswordResetToken(tokenHash); }
+
+  // ---- audit / login events / settings ----
+  public recordLoginEvent(input: LoginEventInput): void { return this.users.recordLoginEvent(input); }
+  public listLoginEvents(limit: number, offset: number, userId?: string): Record<string, unknown>[] { return this.users.listLoginEvents(limit, offset, userId); }
+  public recordAuditEvent(input: AuditEventInput): void { return this.users.recordAuditEvent(input); }
+  public listAuditEvents(limit: number, offset: number): Record<string, unknown>[] { return this.users.listAuditEvents(limit, offset); }
+  public getSetting<T>(key: string, fallback: T): T { return this.users.getSetting(key, fallback); }
+  public setSetting(key: string, value: unknown): void { return this.users.setSetting(key, value); }
+  public claimOrphanRows(ownerId: string): Record<string, number> { return this.users.claimOrphanRows(ownerId); }
+
+  // ---- credits ----
+  public getBalance(userId: string): number { return this.credits.getBalance(userId); }
+  public applyCreditEntry(input: CreditEntryInput, options?: { allowNegative?: boolean }): ReturnType<CreditRepository["applyEntry"]> { return this.credits.applyEntry(input, options); }
+  public listCreditLedger(userId: string, limit: number, offset: number): CreditEntryRecord[] { return this.credits.listLedger(userId, limit, offset); }
+  public countCreditLedger(userId: string): number { return this.credits.countLedger(userId); }
+  public recomputeBalance(userId: string): { stored: number; computed: number } { return this.credits.recomputeBalance(userId); }
+  public setBalance(userId: string, balanceMicrocredits: number): void { return this.credits.setBalance(userId, balanceMicrocredits); }
+
+  // ---- plans / subscriptions / entitlements ----
+  public listPlans(includeInactive = false): PlanRecord[] { return this.plans.listPlans(includeInactive); }
+  public getPlan(id: string): PlanRecord | undefined { return this.plans.getPlan(id); }
+  public getPlanByCode(code: string): PlanRecord | undefined { return this.plans.getPlanByCode(code); }
+  public upsertPlan(input: Parameters<PlanRepository["upsertPlan"]>[0]): PlanRecord { return this.plans.upsertPlan(input); }
+  public getActiveSubscription(userId: string): SubscriptionRecord | undefined { return this.plans.getActiveSubscription(userId); }
+  public listSubscriptions(limit: number, offset: number): SubscriptionRecord[] { return this.plans.listSubscriptions(limit, offset); }
+  public activateSubscription(input: Parameters<PlanRepository["activateSubscription"]>[0]): SubscriptionRecord { return this.plans.activateSubscription(input); }
+  public updateSubscription(id: string, patch: Partial<Pick<SubscriptionRecord, "status" | "currentPeriodStart" | "currentPeriodEnd" | "cancelAtPeriodEnd">>): SubscriptionRecord | undefined { return this.plans.updateSubscription(id, patch); }
+  public resolveEntitlements(user: Pick<UserRecord, "id" | "role">): { entitlements: Entitlements; planCode: string } { return this.plans.resolveEntitlements(user); }
+
+  // ---- billing / prices ----
+  public createBillingReservation(input: Parameters<BillingRepository["createReservation"]>[0]): BillingOrderRecord { return this.billing.createReservation(input); }
+  public getBillingOrder(id: string): BillingOrderRecord | undefined { return this.billing.getBillingOrder(id); }
+  public getBillingOrderByJob(jobId: string): BillingOrderRecord | undefined { return this.billing.getByJobId(jobId); }
+  public transitionBillingOrder(id: string, status: Exclude<BillingStatus, "reserved">, settledMicrocredits?: number, from?: BillingStatus): BillingOrderRecord | undefined { return this.billing.transition(id, status, settledMicrocredits, from); }
+  public listBillingOrders(userId: string, limit: number, offset: number): BillingOrderRecord[] { return this.billing.listByUser(userId, limit, offset); }
+  /** 僵尸预扣：订单仍 reserved，但任务已终态或已不存在。 */
+  public listStaleReservations(): BillingOrderRecord[] { return this.billing.listStaleReservations(); }
+  public listUncertainBillingOrders(limit: number, offset: number): BillingOrderRecord[] { return this.billing.listUncertain(limit, offset); }
+  public getProviderModelPrice(providerId: string, modelId: string, kind: string): ProviderModelPriceRecord | undefined { return this.billing.getPrice(providerId, modelId, kind); }
+  public listProviderModelPrices(): ProviderModelPriceRecord[] { return this.billing.listPrices(); }
+  public upsertProviderModelPrice(input: Parameters<BillingRepository["upsertPrice"]>[0]): ProviderModelPriceRecord { return this.billing.upsertPrice(input); }
+  public deleteProviderModelPrice(id: string): boolean { return this.billing.deletePrice(id); }
+
+  // ---- payments ----
+  public createPaymentOrder(input: Parameters<PaymentRepository["createOrder"]>[0]): PaymentOrderRecord { return this.payments.createOrder(input); }
+  public getPaymentOrder(id: string): PaymentOrderRecord | undefined { return this.payments.getOrder(id); }
+  public getPaymentOrderByProviderNo(provider: string, providerOrderNo: string): PaymentOrderRecord | undefined { return this.payments.getOrderByProviderNo(provider, providerOrderNo); }
+  public updatePaymentOrder(id: string, patch: Partial<Pick<PaymentOrderRecord, "status" | "providerOrderNo" | "providerTradeNo" | "paidAt" | "creditedAt">>): PaymentOrderRecord | undefined { return this.payments.updateOrder(id, patch); }
+  public listPaymentOrders(userId: string, limit: number, offset: number): PaymentOrderRecord[] { return this.payments.listByUser(userId, limit, offset); }
+  public listAllPaymentOrders(limit: number, offset: number, status?: PaymentOrderStatus): PaymentOrderRecord[] { return this.payments.listOrders(limit, offset, status); }
+  public recordPaymentNotification(input: Parameters<PaymentRepository["recordNotification"]>[0]): { duplicate: boolean; id: string } { return this.payments.recordNotification(input); }
+  public markPaymentNotification(id: string, status: PaymentNotificationStatus, error?: unknown): void { return this.payments.markNotification(id, status, error); }
+  public listPaymentNotifications(limit: number, offset: number): Record<string, unknown>[] { return this.payments.listNotifications(limit, offset); }
+  public creditPaymentOrderOnce(orderId: string, credit: (order: PaymentOrderRecord) => void): ReturnType<PaymentRepository["creditOrderOnce"]> { return this.payments.creditOrderOnce(orderId, credit); }
+
+  // ---- admin overview ----
+  public adminOverview(): AdminOverview { return this.admin.overview(); }
+  public listPaidButNotCredited(limit: number, offset: number): Record<string, unknown>[] { return this.admin.paidButNotCredited(limit, offset); }
+  public listExpiredUnpaid(now: string, limit: number, offset: number): Record<string, unknown>[] { return this.admin.expiredUnpaid(now, limit, offset); }
+
+  // ---- storage accounting ----
+  public usedStorageBytes(ownerId: string): number { return this.storage.usedBytes(ownerId); }
+  public recordStorageSize(table: SizedTable, id: string, sizeBytes: number): void { return this.storage.recordSize(table, id, sizeBytes); }
+  public recountStorage(dataDir: string): { updated: number; missing: number } { return this.storage.recount(dataDir); }
 }

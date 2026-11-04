@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+
+/** 引导管理员凭据：脚本启动的 API 会用它建号，随后所有请求都以该身份发出。 */
+const E2E_EMAIL = "e2e-owner@ecomgen.local";
+const E2E_PASSWORD = "e2e-password-123456";
 import { rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -229,6 +233,9 @@ try {
     ECOMGEN_DATA_DIR: dataDir,
     REDIS_URL: process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
     ECOMGEN_QUEUE_NAME: `ecomgen-e2e-${Date.now()}`,
+    // 鉴权钩子已开启：脚本需要一个已知凭据的引导管理员才能调用任何接口。
+    ECOMGEN_BOOTSTRAP_EMAIL: E2E_EMAIL,
+    ECOMGEN_BOOTSTRAP_PASSWORD: E2E_PASSWORD,
     PORT: String(apiPort),
     HOST: "127.0.0.1",
     WORKER_CONCURRENCY: "1"
@@ -240,6 +247,29 @@ try {
   // 把启动竞态暴露成明确的启动失败，而不是误导性的任务超时。
   await waitFor(() => workerReady, 15_000, "worker readiness");
   const base = `http://127.0.0.1:${apiPort}/api/v1`;
+
+  /**
+   * 登录并把会话 cookie 注入后续所有请求。
+   *
+   * 包在 fetch 上而不是逐个调用点加参数：脚本里既有 requestJson 也有直接下载文件的裸 fetch，
+   * 逐个改容易漏掉某一条，而漏掉的表现是 401 —— 和"没登录"混在一起很难看出是哪一步。
+   */
+  const loginResponse = await fetch(`${base}/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: E2E_EMAIL, password: E2E_PASSWORD })
+  });
+  assert.equal(loginResponse.ok, true, `login failed: ${loginResponse.status}`);
+  const sessionCookie = (loginResponse.headers.get("set-cookie") ?? "").split(";")[0];
+  assert.ok(sessionCookie.startsWith("ecomgen_session="), "login did not set a session cookie");
+
+  const authenticatedFetch = globalThis.fetch;
+  globalThis.fetch = (input, init = {}) => {
+    const url = typeof input === "string" ? input : (input?.url ?? String(input));
+    if (!url.startsWith(base)) return authenticatedFetch(input, init);
+    return authenticatedFetch(input, { ...init, headers: { ...(init.headers ?? {}), cookie: sessionCookie } });
+  };
+
   const provider = await requestJson(`${base}/providers`, "POST", {
     name: "Mock OpenAI provider",
     baseUrl: `http://127.0.0.1:${mockPort}/v1`,
@@ -859,6 +889,11 @@ try {
   // 取消不是瞬时错误：重发一次就是再付一次费，因此上游只允许收到一次请求。
   assert.equal(cancellation.hangingRequests, 1);
   assert.equal((await requestJson(`${base}/projects/${cancelProject.id}/outputs`, "GET")).length, 0);
+  // 存储配额曾经是死功能：写入路径不记 size_bytes，usedBytes 恒为 0。
+  // 这里断言整条链路跑完真的有占用，否则配额永远拦不住任何人。
+  const me = await requestJson(`${base}/auth/me`, "GET");
+  assert.ok(me.usedStorageBytes > 0, `usedStorageBytes should be positive after generating, got ${me.usedStorageBytes}`);
+
   console.log("Mock E2E passed: plan -> confirm -> generate -> export -> custom template MANUAL plan & generate -> suite forge -> model cast & select -> pattern extract (segment + generate) /forge/upload/derive & print pack (centered + tile + mockup) & listing & packaging pipeline (full chain + seam-risk stop & resolution) -> cancel aborts in-flight generation");
 } finally {
   await Promise.all(children.map(stop));

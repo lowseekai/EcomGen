@@ -5071,3 +5071,1224 @@ components:
           $ref: "#/components/schemas/Pattern"
         reused:
           type: boolean
+    AdminRole:
+      type: string
+      enum:
+        - owner
+        - admin
+        - support
+        - user
+    AdminUserStatus:
+      type: string
+      enum:
+        - active
+        - disabled
+    AdminUser:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - role
+        - status
+        - emailVerifiedAt
+        - createdAt
+        - updatedAt
+        - balanceMicrocredits
+      properties:
+        id:
+          format: uuid
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        status:
+          $ref: "#/components/schemas/AdminUserStatus"
+        emailVerifiedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        balanceMicrocredits:
+          type: integer
+    AdminUserList:
+      type: object
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUser"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    AdminUserDetail:
+      type: object
+      required:
+        - activeSubscription
+        - entitlements
+        - sessions
+      properties:
+        activeSubscription:
+          anyOf:
+            - type: object
+              patternProperties:
+                ^(.*)$: {}
+            - type: "null"
+        entitlements:
+          type: object
+          required:
+            - entitlements
+            - planCode
+          properties:
+            entitlements:
+              $ref: "#/components/schemas/Entitlements"
+            planCode:
+              type: string
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSessionSummary"
+    AdminUserPatchInput:
+      type: object
+      properties:
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        status:
+          $ref: "#/components/schemas/AdminUserStatus"
+    AdminCreateUserInput:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        password:
+          type: string
+        credits:
+          type: number
+    AdminCreateUserResult:
+      type: object
+      properties:
+        generatedPassword:
+          type: string
+    AdminPasswordResetInput:
+      type: object
+      properties:
+        password:
+          type: string
+    AdminPasswordResetResult:
+      type: object
+      required:
+        - revokedSessions
+      properties:
+        revokedSessions:
+          type: integer
+        generatedPassword:
+          type: string
+    AdminCreditAdjustInput:
+      type: object
+      required:
+        - credits
+      properties:
+        credits:
+          type: number
+        note:
+          type: string
+    AdminCreditAdjustResult:
+      type: object
+      required:
+        - balanceMicrocredits
+      properties:
+        balanceMicrocredits:
+          type: integer
+    CreditLedgerEntry:
+      type: object
+      required:
+        - id
+        - userId
+        - type
+        - amountMicrocredits
+        - balanceAfterMicrocredits
+        - jobId
+        - projectId
+        - note
+        - createdAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        userId:
+          format: uuid
+          type: string
+        type:
+          type: string
+        amountMicrocredits:
+          type: integer
+        balanceAfterMicrocredits:
+          type: integer
+        jobId:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: "null"
+        projectId:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: "null"
+        note:
+          anyOf:
+            - type: string
+            - type: "null"
+        createdAt:
+          format: date-time
+          type: string
+    CreditLedgerPage:
+      type: object
+      required:
+        - items
+        - total
+        - balance
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditLedgerEntry"
+        total:
+          type: integer
+        balance:
+          type: object
+          required:
+            - stored
+            - computed
+          properties:
+            stored:
+              type: integer
+            computed:
+              type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    Entitlements:
+      type: object
+      required:
+        - monthlyCredits
+        - maxProjects
+        - maxConcurrentJobs
+        - maxImageResolution
+        - maxStorageBytes
+        - allowPsdExport
+        - allowLayerExport
+        - allowWebResearch
+        - allowSuiteForge
+        - allowModelLibrary
+        - allowPatternStudio
+        - watermarkExports
+      properties:
+        monthlyCredits:
+          type: integer
+        maxProjects:
+          description: -1 表示不限。
+          type: integer
+        maxConcurrentJobs:
+          type: integer
+        maxImageResolution:
+          $ref: "#/components/schemas/ImageResolution"
+        maxStorageBytes:
+          description: -1 表示不限。
+          type: integer
+        allowPsdExport:
+          type: boolean
+        allowLayerExport:
+          type: boolean
+        allowWebResearch:
+          type: boolean
+        allowSuiteForge:
+          type: boolean
+        allowModelLibrary:
+          type: boolean
+        allowPatternStudio:
+          type: boolean
+        watermarkExports:
+          type: boolean
+    UserSessionSummary:
+      type: object
+      required:
+        - id
+        - createdAt
+        - lastSeenAt
+        - expiresAt
+        - revokedAt
+        - userAgent
+        - ip
+      properties:
+        id:
+          format: uuid
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        lastSeenAt:
+          format: date-time
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        revokedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        userAgent:
+          anyOf:
+            - type: string
+            - type: "null"
+        ip:
+          anyOf:
+            - type: string
+            - type: "null"
+    BillingStatus:
+      type: string
+      enum:
+        - reserved
+        - settled
+        - refunded
+        - uncertain
+    BillingOrder:
+      type: object
+      required:
+        - id
+        - userId
+        - jobId
+        - status
+        - reservedMicrocredits
+        - settledMicrocredits
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        userId:
+          format: uuid
+          type: string
+        jobId:
+          format: uuid
+          type: string
+        status:
+          $ref: "#/components/schemas/BillingStatus"
+        reservedMicrocredits:
+          type: integer
+        settledMicrocredits:
+          anyOf:
+            - type: integer
+            - type: "null"
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+    UncertainBillingOrder:
+      type: object
+      required:
+        - user
+      properties:
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/AdminUser"
+            - type: "null"
+    UncertainBillingOrderList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UncertainBillingOrder"
+        limit:
+          type: integer
+        offset:
+          type: integer
+    ResolveBillingOrderInput:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - settle
+            - refund
+        settledMicrocredits:
+          type: integer
+        note:
+          type: string
+    PricingMode:
+      type: string
+      enum:
+        - fixed_request
+        - per_image
+        - per_resolution
+        - token
+    ProviderModelPrice:
+      type: object
+      required:
+        - id
+        - providerId
+        - modelId
+        - kind
+        - pricingMode
+        - priceMicrocredits
+        - costMicrocredits
+        - tiers
+        - active
+      properties:
+        id:
+          format: uuid
+          type: string
+        providerId:
+          format: uuid
+          type: string
+        modelId:
+          type: string
+        kind:
+          type: string
+        pricingMode:
+          $ref: "#/components/schemas/PricingMode"
+        priceMicrocredits:
+          type: integer
+        costMicrocredits:
+          type: integer
+        tiers:
+          type: object
+          patternProperties:
+            ^(.*)$:
+              type: integer
+        active:
+          type: boolean
+    ProviderModelPriceList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderModelPrice"
+    UpsertProviderModelPriceInput:
+      type: object
+      required:
+        - providerId
+        - modelId
+        - kind
+        - pricingMode
+      properties:
+        providerId:
+          format: uuid
+          type: string
+        modelId:
+          type: string
+        kind:
+          type: string
+        pricingMode:
+          $ref: "#/components/schemas/PricingMode"
+        priceMicrocredits:
+          type: integer
+        costMicrocredits:
+          type: integer
+        tiers:
+          type: object
+          patternProperties:
+            ^(.*)$:
+              type: integer
+        active:
+          type: boolean
+    AuditEvent:
+      type: object
+      required:
+        - id
+        - actor_user_id
+        - action
+        - target_type
+        - target_id
+        - summary
+        - created_at
+      properties:
+        id:
+          format: uuid
+          type: string
+        actor_user_id:
+          format: uuid
+          type: string
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          anyOf:
+            - type: string
+            - type: "null"
+        summary:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+    AuditEventList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        limit:
+          type: integer
+        offset:
+          type: integer
+    PaymentConfig:
+      type: object
+      required:
+        - provider
+        - hasKey
+        - gateway
+        - pid
+        - payType
+        - pricePerCreditCents
+        - publicBaseUrl
+      properties:
+        provider:
+          anyOf:
+            - type: string
+            - type: "null"
+        hasKey:
+          type: boolean
+        gateway:
+          anyOf:
+            - type: string
+            - type: "null"
+        pid:
+          anyOf:
+            - type: string
+            - type: "null"
+        payType:
+          type: string
+        pricePerCreditCents:
+          type: integer
+        publicBaseUrl:
+          type: string
+    PaymentConfigInput:
+      type: object
+      properties:
+        gateway:
+          type: string
+        pid:
+          type: string
+        key:
+          type: string
+        payType:
+          type: string
+        pricePerCreditCents:
+          type: integer
+        publicBaseUrl:
+          type: string
+    PaymentConfigUpdateResult:
+      type: object
+      required:
+        - ok
+        - hasKey
+      properties:
+        ok:
+          type: boolean
+        hasKey:
+          type: boolean
+    PaymentOrderStatus:
+      type: string
+      enum:
+        - created
+        - pending
+        - paid
+        - closed
+        - failed
+    PaymentOrder:
+      type: object
+      required:
+        - id
+        - kind
+        - credits
+        - amountCents
+        - currency
+        - status
+        - provider
+        - tradeNo
+        - paidAt
+        - creditedAt
+        - expiresAt
+        - createdAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        kind:
+          type: string
+        credits:
+          type: number
+        amountCents:
+          type: integer
+        currency:
+          type: string
+        status:
+          $ref: "#/components/schemas/PaymentOrderStatus"
+        provider:
+          type: string
+        tradeNo:
+          anyOf:
+            - type: string
+            - type: "null"
+        paidAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        creditedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        expiresAt:
+          format: date-time
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+    PaymentOrderList:
+      type: object
+      required:
+        - items
+        - pricePerCreditCents
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentOrder"
+        pricePerCreditCents:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    CreateTopupOrderInput:
+      type: object
+      required:
+        - credits
+      properties:
+        credits:
+          exclusiveMinimum: 0
+          type: number
+    CreateTopupOrderResult:
+      type: object
+      required:
+        - order
+        - checkoutUrl
+      properties:
+        order:
+          $ref: "#/components/schemas/PaymentOrder"
+        checkoutUrl:
+          type: string
+    AdminDashboard:
+      type: object
+      required:
+        - users
+        - projects
+        - jobs
+        - billing
+        - credits
+        - payments
+        - storage
+        - display
+      properties:
+        users:
+          type: object
+          required:
+            - total
+            - active
+            - disabled
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            disabled:
+              type: integer
+        projects:
+          type: object
+          required:
+            - total
+            - active
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+        jobs:
+          type: object
+          required:
+            - total
+            - queued
+            - running
+            - succeeded
+            - failed
+            - cancelled
+          properties:
+            total:
+              type: integer
+            queued:
+              type: integer
+            running:
+              type: integer
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            cancelled:
+              type: integer
+        billing:
+          type: object
+          required:
+            - reserved
+            - uncertain
+            - settled
+            - refunded
+            - settledMicrocredits
+          properties:
+            reserved:
+              type: integer
+            uncertain:
+              type: integer
+            settled:
+              type: integer
+            refunded:
+              type: integer
+            settledMicrocredits:
+              type: integer
+        credits:
+          type: object
+          required:
+            - issuedMicrocredits
+            - spentMicrocredits
+            - toppedUpMicrocredits
+          properties:
+            issuedMicrocredits:
+              type: integer
+            spentMicrocredits:
+              type: integer
+            toppedUpMicrocredits:
+              type: integer
+        payments:
+          type: object
+          required:
+            - pending
+            - paid
+            - creditedMicrocredits
+          properties:
+            pending:
+              type: integer
+            paid:
+              type: integer
+            creditedMicrocredits:
+              type: integer
+        storage:
+          type: object
+          required:
+            - patterns
+            - models
+            - assets
+            - outputs
+          properties:
+            patterns:
+              type: integer
+            models:
+              type: integer
+            assets:
+              type: integer
+            outputs:
+              type: integer
+        display:
+          type: object
+          required:
+            - settledCredits
+            - toppedUpCredits
+            - spentCredits
+          properties:
+            settledCredits:
+              type: number
+            toppedUpCredits:
+              type: number
+            spentCredits:
+              type: number
+    BillingPeriod:
+      type: string
+      enum:
+        - none
+        - month
+        - year
+    PlanEntitlements:
+      type: object
+      properties:
+        monthlyCredits:
+          type: integer
+        maxProjects:
+          type: integer
+        maxConcurrentJobs:
+          type: integer
+        maxImageResolution:
+          type: string
+        maxStorageBytes:
+          type: integer
+        allowPsdExport:
+          type: boolean
+        allowLayerExport:
+          type: boolean
+        allowWebResearch:
+          type: boolean
+        allowSuiteForge:
+          type: boolean
+        allowModelLibrary:
+          type: boolean
+        allowPatternStudio:
+          type: boolean
+        watermarkExports:
+          type: boolean
+    Plan:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - description
+        - priceCents
+        - currency
+        - billingPeriod
+        - active
+        - sortOrder
+        - entitlements
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          description: 套餐标识，稳定 slug（如 plan-free），跨环境一致。
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        priceCents:
+          type: integer
+        currency:
+          type: string
+        billingPeriod:
+          $ref: "#/components/schemas/BillingPeriod"
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+        entitlements:
+          $ref: "#/components/schemas/PlanEntitlements"
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+    PlanList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+    AdminPlanPatchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        priceCents:
+          type: integer
+        billingPeriod:
+          $ref: "#/components/schemas/BillingPeriod"
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+        entitlements:
+          $ref: "#/components/schemas/PlanEntitlements"
+    AdminPaymentOrder:
+      type: object
+      required:
+        - id
+        - userId
+        - kind
+        - planId
+        - creditsMicrocredits
+        - credits
+        - amountCents
+        - currency
+        - status
+        - provider
+        - providerConfig
+        - providerOrderNo
+        - providerTradeNo
+        - paidAt
+        - creditedAt
+        - expiresAt
+        - createdAt
+        - updatedAt
+        - user
+      properties:
+        id:
+          format: uuid
+          type: string
+        userId:
+          format: uuid
+          type: string
+        kind:
+          type: string
+        planId:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: "null"
+        creditsMicrocredits:
+          type: integer
+        credits:
+          type: number
+        amountCents:
+          type: integer
+        currency:
+          type: string
+        status:
+          $ref: "#/components/schemas/PaymentOrderStatus"
+        provider:
+          type: string
+        providerConfig:
+          anyOf:
+            - type: object
+              patternProperties:
+                ^(.*)$: {}
+            - type: "null"
+        providerOrderNo:
+          anyOf:
+            - type: string
+            - type: "null"
+        providerTradeNo:
+          anyOf:
+            - type: string
+            - type: "null"
+        paidAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        creditedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        expiresAt:
+          format: date-time
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/AdminUser"
+            - type: "null"
+    AdminPaymentOrderList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPaymentOrder"
+        limit:
+          type: integer
+        offset:
+          type: integer
+    PaymentReconcile:
+      type: object
+      required:
+        - paidNotCredited
+        - expiredUnpaid
+        - limit
+        - offset
+      properties:
+        paidNotCredited:
+          type: array
+          items:
+            type: object
+            patternProperties:
+              ^(.*)$: {}
+        expiredUnpaid:
+          type: array
+          items:
+            type: object
+            patternProperties:
+              ^(.*)$: {}
+        limit:
+          type: integer
+        offset:
+          type: integer
+    AdminPaymentConfirmInput:
+      type: object
+      properties:
+        tradeNo:
+          type: string
+    AdminPaymentConfirmResult:
+      type: object
+      required:
+        - credited
+        - order
+      properties:
+        credited:
+          type: boolean
+        order:
+          anyOf:
+            - $ref: "#/components/schemas/AdminPaymentOrder"
+            - type: "null"
+    SessionUser:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - role
+        - status
+        - createdAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        status:
+          $ref: "#/components/schemas/AdminUserStatus"
+        createdAt:
+          format: date-time
+          type: string
+    SessionPayload:
+      type: object
+      required:
+        - user
+        - planCode
+        - entitlements
+        - balanceMicrocredits
+        - usedStorageBytes
+      properties:
+        user:
+          $ref: "#/components/schemas/SessionUser"
+        planCode:
+          type: string
+        entitlements:
+          $ref: "#/components/schemas/Entitlements"
+        balanceMicrocredits:
+          type: integer
+        usedStorageBytes:
+          type: integer
+    SessionState:
+      anyOf:
+        - $ref: "#/components/schemas/SessionPayload"
+        - type: object
+          required:
+            - user
+          properties:
+            user:
+              type: "null"
+    RegisterInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        displayName:
+          type: string
+    LoginInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    PasswordResetRequestInput:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+    PasswordResetRequestResult:
+      type: object
+      required:
+        - accepted
+      properties:
+        accepted:
+          const: true
+          type: boolean
+        token:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+    PasswordResetConfirmInput:
+      type: object
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+    ChangePasswordInput:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+    MailSettings:
+      type: object
+      required:
+        - configured
+        - host
+        - port
+        - secure
+        - requireStartTls
+        - user
+        - from
+        - fromName
+        - hasPass
+      properties:
+        configured:
+          type: boolean
+        host:
+          anyOf:
+            - type: string
+            - type: "null"
+        port:
+          type: integer
+        secure:
+          type: boolean
+        requireStartTls:
+          type: boolean
+        user:
+          anyOf:
+            - type: string
+            - type: "null"
+        from:
+          anyOf:
+            - type: string
+            - type: "null"
+        fromName:
+          anyOf:
+            - type: string
+            - type: "null"
+        hasPass:
+          type: boolean
+    MailSettingsInput:
+      type: object
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        secure:
+          type: boolean
+        requireStartTls:
+          type: boolean
+        user:
+          type: string
+        pass:
+          type: string
+        from:
+          type: string
+        fromName:
+          type: string
+    MailSettingsUpdateResult:
+      type: object
+      required:
+        - ok
+        - hasPass
+      properties:
+        ok:
+          type: boolean
+        hasPass:
+          type: boolean
+    MailTestResult:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean

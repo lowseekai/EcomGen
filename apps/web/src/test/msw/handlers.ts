@@ -27,6 +27,35 @@ export const userTemplateStore: typeof USER_TEMPLATE_FIXTURE[] = [{ ...USER_TEMP
 /** 套图内存态：用例按需填充（清空由用例自己负责），默认空库与改动前的行为一致。 */
 export const suiteStore: ReturnType<typeof suiteFixtures> = [];
 
+/** 默认登录用户：站长身份，套餐不限，额度充足，让页面测试不因配额分支走偏。 */
+export const SESSION_FIXTURE = {
+  user: {
+    id: "00000000-0000-4000-8000-000000000001",
+    email: "owner@test.local",
+    displayName: "站长",
+    role: "owner",
+    status: "active",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  planCode: "unlimited",
+  entitlements: {
+    monthlyCredits: Number.MAX_SAFE_INTEGER,
+    maxProjects: -1,
+    maxConcurrentJobs: 16,
+    maxImageResolution: "4K",
+    maxStorageBytes: -1,
+    allowPsdExport: true,
+    allowLayerExport: true,
+    allowWebResearch: true,
+    allowSuiteForge: true,
+    allowModelLibrary: true,
+    allowPatternStudio: true,
+    watermarkExports: false,
+  },
+  balanceMicrocredits: 100_000_000,
+  usedStorageBytes: 0,
+};
+
 /** 恢复内存态默认值：测试基建在每个用例结束后调用，避免模块级 store 造成用例间的顺序依赖。 */
 export function resetStores(): void {
   userTemplateStore.length = 0;
@@ -121,6 +150,14 @@ export const LIBRARY_ITEM_FIXTURE = {
 /** 严格按根目录 openapi.yaml 手写；契约变更时先改契约，再同步 handlers 和组件。 */
 export const handlers = [
   http.get("http://127.0.0.1:8787/health", () => HttpResponse.json({ status: "ok", webResearchAvailable: true })),
+
+  /**
+   * 默认已登录会话。
+   *
+   * 页面测试全部在登录态下运行，与真实使用一致；顶栏的用户菜单会无条件读它，
+   * 缺这个 handler 会让所有页面用例因为 `onUnhandledRequest: "error"` 直接失败。
+   */
+  http.get(`${BASE}/auth/me`, () => HttpResponse.json(SESSION_FIXTURE)),
 
   http.get(`${BASE}/providers`, () =>
     HttpResponse.json({ items: [PROVIDER_FIXTURE], nextCursor: null }),

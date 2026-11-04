@@ -7,7 +7,11 @@ export type ApiErrorCode =
   | "RATE_LIMITED"
   | "INTERNAL_ERROR"
   | "PROVIDER_ERROR"
-  | "QUEUE_UNAVAILABLE";
+  | "QUEUE_UNAVAILABLE"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "QUOTA_EXCEEDED"
+  | "INSUFFICIENT_CREDITS";
 
 export class ApiError extends Error {
   public constructor(

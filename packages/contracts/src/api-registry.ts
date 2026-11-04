@@ -29,6 +29,9 @@ import {
   FinalizeDraftCandidateInput, FinalizeDraftCandidateResponse,
 } from "./pattern-draft-schemas.js";
 import { EventEnvelope, ModelCapabilities, ModelDefinition } from "./legacy-schemas.js";
+// 管理后台与充值：显式列出，避免裸元组常量混入 components。
+import { SessionUser, SessionPayload, SessionState, RegisterInput, LoginInput, PasswordResetRequestInput, PasswordResetRequestResult, PasswordResetConfirmInput, ChangePasswordInput } from "./auth-schemas.js";
+import { MailSettings, MailSettingsInput, MailSettingsUpdateResult, MailTestResult, AdminDashboard, BillingPeriod, PlanEntitlements, Plan, PlanList, AdminPlanPatchInput, AdminPaymentOrder, AdminPaymentOrderList, PaymentReconcile, AdminPaymentConfirmInput, AdminPaymentConfirmResult, AdminRole, AdminUserStatus, AdminUser, AdminUserList, AdminUserDetail, AdminUserPatchInput, AdminCreateUserInput, AdminCreateUserResult, AdminPasswordResetInput, AdminPasswordResetResult, AdminCreditAdjustInput, AdminCreditAdjustResult, CreditLedgerEntry, CreditLedgerPage, Entitlements, UserSessionSummary, BillingStatus, BillingOrder, UncertainBillingOrder, UncertainBillingOrderList, ResolveBillingOrderInput, PricingMode, ProviderModelPrice, ProviderModelPriceList, UpsertProviderModelPriceInput, AuditEvent, AuditEventList, PaymentConfig, PaymentConfigInput, PaymentConfigUpdateResult, PaymentOrderStatus, PaymentOrder, PaymentOrderList, CreateTopupOrderInput, CreateTopupOrderResult } from "./admin-schemas.js";
 
 /** All schemas emitted into OpenAPI components.schemas. */
 export const API_SCHEMA_REGISTRY = {
@@ -52,6 +55,10 @@ export const API_SCHEMA_REGISTRY = {
   DraftCandidateTileable, DraftCandidate, DraftCandidateList, DraftSlot, DraftBatch, DraftBatchList,
   CreateDraftBatchInput, DraftJobRef, CreateDraftBatchResponse, RetryDraftBatchResponse,
   FinalizeDraftCandidateInput, FinalizeDraftCandidateResponse,
+  AdminRole, AdminUserStatus, AdminUser, AdminUserList, AdminUserDetail, AdminUserPatchInput, AdminCreateUserInput, AdminCreateUserResult, AdminPasswordResetInput, AdminPasswordResetResult, AdminCreditAdjustInput, AdminCreditAdjustResult, CreditLedgerEntry, CreditLedgerPage, Entitlements, UserSessionSummary, BillingStatus, BillingOrder, UncertainBillingOrder, UncertainBillingOrderList, ResolveBillingOrderInput, PricingMode, ProviderModelPrice, ProviderModelPriceList, UpsertProviderModelPriceInput, AuditEvent, AuditEventList, PaymentConfig, PaymentConfigInput, PaymentConfigUpdateResult, PaymentOrderStatus, PaymentOrder, PaymentOrderList, CreateTopupOrderInput, CreateTopupOrderResult,
+  AdminDashboard, BillingPeriod, PlanEntitlements, Plan, PlanList, AdminPlanPatchInput, AdminPaymentOrder, AdminPaymentOrderList, PaymentReconcile, AdminPaymentConfirmInput, AdminPaymentConfirmResult,
+  SessionUser, SessionPayload, SessionState, RegisterInput, LoginInput, PasswordResetRequestInput, PasswordResetRequestResult, PasswordResetConfirmInput, ChangePasswordInput,
+  MailSettings, MailSettingsInput, MailSettingsUpdateResult, MailTestResult,
 } as const;
 
 export type ApiSchemaName = keyof typeof API_SCHEMA_REGISTRY;

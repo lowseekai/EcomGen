@@ -2232,3 +2232,516 @@ paths:
                 format: binary
         "404":
           $ref: "#/components/responses/NotFound"
+  /billing/orders:
+    get:
+      operationId: listBillingOrders
+      responses:
+        "200":
+          description: 当前用户的充值订单与积分单价。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOrderList"
+  /billing/topup-orders:
+    post:
+      operationId: createTopupOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTopupOrderInput"
+      responses:
+        "201":
+          description: 订单已创建，返回收银台地址。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTopupOrderResult"
+        "422":
+          description: 支付渠道未配置。
+  /billing/orders/{orderId}:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getBillingOrder
+      responses:
+        "200":
+          description: 订单状态；别人的订单按 404 处理。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOrder"
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      responses:
+        "200":
+          description: 用户列表，带余额。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserList"
+    post:
+      operationId: createAdminUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateUserInput"
+      responses:
+        "201":
+          description: 用户已创建；未指定密码时返回一次性密码。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminCreateUserResult"
+  /admin/users/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAdminUser
+      responses:
+        "200":
+          description: 用户详情，含权益与会话。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserDetail"
+    patch:
+      operationId: patchAdminUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserPatchInput"
+      responses:
+        "200":
+          description: 用户已更新。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+  /admin/users/{userId}/password:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resetAdminUserPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPasswordResetInput"
+      responses:
+        "200":
+          description: 密码已重置，该用户全部会话失效。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPasswordResetResult"
+  /admin/users/{userId}/credits:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: adjustAdminUserCredits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreditAdjustInput"
+      responses:
+        "200":
+          description: 积分已调整。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminCreditAdjustResult"
+  /admin/users/{userId}/ledger:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listAdminUserLedger
+      responses:
+        "200":
+          description: 积分流水与余额对账。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditLedgerPage"
+  /admin/billing/uncertain:
+    get:
+      operationId: listUncertainBillingOrders
+      responses:
+        "200":
+          description: 等待人工裁决的计费单。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UncertainBillingOrderList"
+  /admin/billing/{jobId}/resolve:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resolveBillingOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveBillingOrderInput"
+      responses:
+        "200":
+          description: 计费单已裁决。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingOrder"
+        "409":
+          description: 该计费单不处于 uncertain。
+  /admin/prices:
+    get:
+      operationId: listAdminPrices
+      responses:
+        "200":
+          description: 平台价目表。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderModelPriceList"
+    post:
+      operationId: upsertAdminPrice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertProviderModelPriceInput"
+      responses:
+        "200":
+          description: 价目已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderModelPrice"
+  /admin/prices/{priceId}:
+    parameters:
+      - name: priceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteAdminPrice
+      responses:
+        "204":
+          description: 价目已删除。
+  /admin/audit:
+    get:
+      operationId: listAdminAudit
+      responses:
+        "200":
+          description: 管理操作审计。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+  /admin/payments/config:
+    get:
+      operationId: getPaymentConfig
+      responses:
+        "200":
+          description: 支付渠道配置；密钥不回显。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentConfig"
+    patch:
+      operationId: updatePaymentConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentConfigInput"
+      responses:
+        "200":
+          description: 配置已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentConfigUpdateResult"
+  /admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      responses:
+        "200":
+          description: 平台运行总览。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+  /admin/plans:
+    get:
+      operationId: listAdminPlans
+      responses:
+        "200":
+          description: 全部套餐，含已停用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+  /admin/plans/{planId}:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: patchAdminPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPlanPatchInput"
+      responses:
+        "200":
+          description: 套餐已更新。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+  /admin/payment-orders:
+    get:
+      operationId: listAdminPaymentOrders
+      responses:
+        "200":
+          description: 全部充值订单。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPaymentOrderList"
+  /admin/payment-orders/reconcile:
+    get:
+      operationId: getPaymentReconcile
+      responses:
+        "200":
+          description: 已付未入账与超期未付。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentReconcile"
+  /admin/payment-orders/{orderId}/confirm:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: confirmAdminPaymentOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPaymentConfirmInput"
+      responses:
+        "200":
+          description: 人工确认到账；重复确认不会重复加积分。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPaymentConfirmResult"
+  /admin/payment-orders/{orderId}/close:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: closeAdminPaymentOrder
+      responses:
+        "200":
+          description: 订单已关闭。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPaymentOrder"
+        "409":
+          description: 已入账的订单不能关闭。
+  /auth/register:
+    post:
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: 注册成功并建立会话。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPayload"
+        "403":
+          description: 未开放注册。
+        "409":
+          description: 邮箱已注册。
+  /auth/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: 登录成功并建立会话。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPayload"
+        "401":
+          description: 邮箱或密码不正确。
+        "403":
+          description: 账号已被禁用。
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        "204":
+          description: 会话已撤销。
+  /auth/me:
+    get:
+      operationId: getSession
+      responses:
+        "200":
+          description: 当前会话；未登录时 user 为 null。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionState"
+  /auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequestInput"
+      responses:
+        "202":
+          description: 已受理；无论邮箱是否存在都返回 accepted。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetRequestResult"
+  /auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmInput"
+      responses:
+        "204":
+          description: 密码已重置，全部会话失效。
+  /auth/password:
+    post:
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "204":
+          description: 密码已修改，全部会话失效。
+  /admin/settings/mail:
+    get:
+      operationId: getMailSettings
+      responses:
+        "200":
+          description: 邮件服务器配置；口令不回显。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailSettings"
+    patch:
+      operationId: updateMailSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MailSettingsInput"
+      responses:
+        "200":
+          description: 配置已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailSettingsUpdateResult"
+  /admin/settings/mail/test:
+    post:
+      operationId: testMailSettings
+      responses:
+        "200":
+          description: 连通性与认证检查通过。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailTestResult"
+        "422":
+          description: 尚未配置邮件服务器。
+        "502":
+          description: 连接或认证失败。

@@ -15,11 +15,16 @@ import type { EcomJobKind, RedisProjectEventBus } from "@ecomgen/jobs";
  */
 export interface ApiContext {
   readonly database: SqliteDatabase;
+  /** 请求作用域仓储：作用域取自当前请求上下文，查询自动按登录用户过滤。业务路由一律用它。 */
   readonly repository: EcomRepository;
+  /** 系统作用域仓储：不做归属过滤。只给需要全局视角的运维/管理路径用，禁止在用户路由里读它。 */
+  readonly systemRepository: EcomRepository;
   readonly storage: LocalAssetStore;
   readonly suiteCatalog: SuiteCatalog;
   readonly secrets: SecretBox;
   readonly events: RedisProjectEventBus;
+  /** 会话 cookie 是否带 Secure：生产 HTTPS 必须为 true，本地 http 调试必须为 false。 */
+  readonly secureCookies: boolean;
   readonly enqueueOrMarkFailed: (
     pending: JobRecord | JobRecord[],
     kind: EcomJobKind,

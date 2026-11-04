@@ -2241,6 +2241,519 @@ paths:
                 format: binary
         "404":
           $ref: "#/components/responses/NotFound"
+  /billing/orders:
+    get:
+      operationId: listBillingOrders
+      responses:
+        "200":
+          description: 当前用户的充值订单与积分单价。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOrderList"
+  /billing/topup-orders:
+    post:
+      operationId: createTopupOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTopupOrderInput"
+      responses:
+        "201":
+          description: 订单已创建，返回收银台地址。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTopupOrderResult"
+        "422":
+          description: 支付渠道未配置。
+  /billing/orders/{orderId}:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getBillingOrder
+      responses:
+        "200":
+          description: 订单状态；别人的订单按 404 处理。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOrder"
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      responses:
+        "200":
+          description: 用户列表，带余额。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserList"
+    post:
+      operationId: createAdminUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateUserInput"
+      responses:
+        "201":
+          description: 用户已创建；未指定密码时返回一次性密码。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminCreateUserResult"
+  /admin/users/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAdminUser
+      responses:
+        "200":
+          description: 用户详情，含权益与会话。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserDetail"
+    patch:
+      operationId: patchAdminUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserPatchInput"
+      responses:
+        "200":
+          description: 用户已更新。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+  /admin/users/{userId}/password:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resetAdminUserPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPasswordResetInput"
+      responses:
+        "200":
+          description: 密码已重置，该用户全部会话失效。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPasswordResetResult"
+  /admin/users/{userId}/credits:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: adjustAdminUserCredits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreditAdjustInput"
+      responses:
+        "200":
+          description: 积分已调整。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminCreditAdjustResult"
+  /admin/users/{userId}/ledger:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listAdminUserLedger
+      responses:
+        "200":
+          description: 积分流水与余额对账。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditLedgerPage"
+  /admin/billing/uncertain:
+    get:
+      operationId: listUncertainBillingOrders
+      responses:
+        "200":
+          description: 等待人工裁决的计费单。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UncertainBillingOrderList"
+  /admin/billing/{jobId}/resolve:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resolveBillingOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveBillingOrderInput"
+      responses:
+        "200":
+          description: 计费单已裁决。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingOrder"
+        "409":
+          description: 该计费单不处于 uncertain。
+  /admin/prices:
+    get:
+      operationId: listAdminPrices
+      responses:
+        "200":
+          description: 平台价目表。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderModelPriceList"
+    post:
+      operationId: upsertAdminPrice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertProviderModelPriceInput"
+      responses:
+        "200":
+          description: 价目已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderModelPrice"
+  /admin/prices/{priceId}:
+    parameters:
+      - name: priceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteAdminPrice
+      responses:
+        "204":
+          description: 价目已删除。
+  /admin/audit:
+    get:
+      operationId: listAdminAudit
+      responses:
+        "200":
+          description: 管理操作审计。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventList"
+  /admin/payments/config:
+    get:
+      operationId: getPaymentConfig
+      responses:
+        "200":
+          description: 支付渠道配置；密钥不回显。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentConfig"
+    patch:
+      operationId: updatePaymentConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentConfigInput"
+      responses:
+        "200":
+          description: 配置已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentConfigUpdateResult"
+  /admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      responses:
+        "200":
+          description: 平台运行总览。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboard"
+  /admin/plans:
+    get:
+      operationId: listAdminPlans
+      responses:
+        "200":
+          description: 全部套餐，含已停用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+  /admin/plans/{planId}:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: patchAdminPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPlanPatchInput"
+      responses:
+        "200":
+          description: 套餐已更新。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+  /admin/payment-orders:
+    get:
+      operationId: listAdminPaymentOrders
+      responses:
+        "200":
+          description: 全部充值订单。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPaymentOrderList"
+  /admin/payment-orders/reconcile:
+    get:
+      operationId: getPaymentReconcile
+      responses:
+        "200":
+          description: 已付未入账与超期未付。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentReconcile"
+  /admin/payment-orders/{orderId}/confirm:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: confirmAdminPaymentOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPaymentConfirmInput"
+      responses:
+        "200":
+          description: 人工确认到账；重复确认不会重复加积分。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPaymentConfirmResult"
+  /admin/payment-orders/{orderId}/close:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: closeAdminPaymentOrder
+      responses:
+        "200":
+          description: 订单已关闭。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPaymentOrder"
+        "409":
+          description: 已入账的订单不能关闭。
+  /auth/register:
+    post:
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: 注册成功并建立会话。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPayload"
+        "403":
+          description: 未开放注册。
+        "409":
+          description: 邮箱已注册。
+  /auth/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: 登录成功并建立会话。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPayload"
+        "401":
+          description: 邮箱或密码不正确。
+        "403":
+          description: 账号已被禁用。
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        "204":
+          description: 会话已撤销。
+  /auth/me:
+    get:
+      operationId: getSession
+      responses:
+        "200":
+          description: 当前会话；未登录时 user 为 null。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionState"
+  /auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequestInput"
+      responses:
+        "202":
+          description: 已受理；无论邮箱是否存在都返回 accepted。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasswordResetRequestResult"
+  /auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmInput"
+      responses:
+        "204":
+          description: 密码已重置，全部会话失效。
+  /auth/password:
+    post:
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "204":
+          description: 密码已修改，全部会话失效。
+  /admin/settings/mail:
+    get:
+      operationId: getMailSettings
+      responses:
+        "200":
+          description: 邮件服务器配置；口令不回显。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailSettings"
+    patch:
+      operationId: updateMailSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MailSettingsInput"
+      responses:
+        "200":
+          description: 配置已保存。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailSettingsUpdateResult"
+  /admin/settings/mail/test:
+    post:
+      operationId: testMailSettings
+      responses:
+        "200":
+          description: 连通性与认证检查通过。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailTestResult"
+        "422":
+          description: 尚未配置邮件服务器。
+        "502":
+          description: 连接或认证失败。
 components:
   parameters:
     ProviderId:
@@ -7489,4 +8002,1225 @@ components:
         pattern:
           $ref: "#/components/schemas/Pattern"
         reused:
+          type: boolean
+    AdminRole:
+      type: string
+      enum:
+        - owner
+        - admin
+        - support
+        - user
+    AdminUserStatus:
+      type: string
+      enum:
+        - active
+        - disabled
+    AdminUser:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - role
+        - status
+        - emailVerifiedAt
+        - createdAt
+        - updatedAt
+        - balanceMicrocredits
+      properties:
+        id:
+          format: uuid
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        status:
+          $ref: "#/components/schemas/AdminUserStatus"
+        emailVerifiedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        balanceMicrocredits:
+          type: integer
+    AdminUserList:
+      type: object
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUser"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    AdminUserDetail:
+      type: object
+      required:
+        - activeSubscription
+        - entitlements
+        - sessions
+      properties:
+        activeSubscription:
+          anyOf:
+            - type: object
+              patternProperties:
+                ^(.*)$: {}
+            - type: "null"
+        entitlements:
+          type: object
+          required:
+            - entitlements
+            - planCode
+          properties:
+            entitlements:
+              $ref: "#/components/schemas/Entitlements"
+            planCode:
+              type: string
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSessionSummary"
+    AdminUserPatchInput:
+      type: object
+      properties:
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        status:
+          $ref: "#/components/schemas/AdminUserStatus"
+    AdminCreateUserInput:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        password:
+          type: string
+        credits:
+          type: number
+    AdminCreateUserResult:
+      type: object
+      properties:
+        generatedPassword:
+          type: string
+    AdminPasswordResetInput:
+      type: object
+      properties:
+        password:
+          type: string
+    AdminPasswordResetResult:
+      type: object
+      required:
+        - revokedSessions
+      properties:
+        revokedSessions:
+          type: integer
+        generatedPassword:
+          type: string
+    AdminCreditAdjustInput:
+      type: object
+      required:
+        - credits
+      properties:
+        credits:
+          type: number
+        note:
+          type: string
+    AdminCreditAdjustResult:
+      type: object
+      required:
+        - balanceMicrocredits
+      properties:
+        balanceMicrocredits:
+          type: integer
+    CreditLedgerEntry:
+      type: object
+      required:
+        - id
+        - userId
+        - type
+        - amountMicrocredits
+        - balanceAfterMicrocredits
+        - jobId
+        - projectId
+        - note
+        - createdAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        userId:
+          format: uuid
+          type: string
+        type:
+          type: string
+        amountMicrocredits:
+          type: integer
+        balanceAfterMicrocredits:
+          type: integer
+        jobId:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: "null"
+        projectId:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: "null"
+        note:
+          anyOf:
+            - type: string
+            - type: "null"
+        createdAt:
+          format: date-time
+          type: string
+    CreditLedgerPage:
+      type: object
+      required:
+        - items
+        - total
+        - balance
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditLedgerEntry"
+        total:
+          type: integer
+        balance:
+          type: object
+          required:
+            - stored
+            - computed
+          properties:
+            stored:
+              type: integer
+            computed:
+              type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    Entitlements:
+      type: object
+      required:
+        - monthlyCredits
+        - maxProjects
+        - maxConcurrentJobs
+        - maxImageResolution
+        - maxStorageBytes
+        - allowPsdExport
+        - allowLayerExport
+        - allowWebResearch
+        - allowSuiteForge
+        - allowModelLibrary
+        - allowPatternStudio
+        - watermarkExports
+      properties:
+        monthlyCredits:
+          type: integer
+        maxProjects:
+          description: -1 表示不限。
+          type: integer
+        maxConcurrentJobs:
+          type: integer
+        maxImageResolution:
+          $ref: "#/components/schemas/ImageResolution"
+        maxStorageBytes:
+          description: -1 表示不限。
+          type: integer
+        allowPsdExport:
+          type: boolean
+        allowLayerExport:
+          type: boolean
+        allowWebResearch:
+          type: boolean
+        allowSuiteForge:
+          type: boolean
+        allowModelLibrary:
+          type: boolean
+        allowPatternStudio:
+          type: boolean
+        watermarkExports:
+          type: boolean
+    UserSessionSummary:
+      type: object
+      required:
+        - id
+        - createdAt
+        - lastSeenAt
+        - expiresAt
+        - revokedAt
+        - userAgent
+        - ip
+      properties:
+        id:
+          format: uuid
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        lastSeenAt:
+          format: date-time
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        revokedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        userAgent:
+          anyOf:
+            - type: string
+            - type: "null"
+        ip:
+          anyOf:
+            - type: string
+            - type: "null"
+    BillingStatus:
+      type: string
+      enum:
+        - reserved
+        - settled
+        - refunded
+        - uncertain
+    BillingOrder:
+      type: object
+      required:
+        - id
+        - userId
+        - jobId
+        - status
+        - reservedMicrocredits
+        - settledMicrocredits
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        userId:
+          format: uuid
+          type: string
+        jobId:
+          format: uuid
+          type: string
+        status:
+          $ref: "#/components/schemas/BillingStatus"
+        reservedMicrocredits:
+          type: integer
+        settledMicrocredits:
+          anyOf:
+            - type: integer
+            - type: "null"
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+    UncertainBillingOrder:
+      type: object
+      required:
+        - user
+      properties:
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/AdminUser"
+            - type: "null"
+    UncertainBillingOrderList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UncertainBillingOrder"
+        limit:
+          type: integer
+        offset:
+          type: integer
+    ResolveBillingOrderInput:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - settle
+            - refund
+        settledMicrocredits:
+          type: integer
+        note:
+          type: string
+    PricingMode:
+      type: string
+      enum:
+        - fixed_request
+        - per_image
+        - per_resolution
+        - token
+    ProviderModelPrice:
+      type: object
+      required:
+        - id
+        - providerId
+        - modelId
+        - kind
+        - pricingMode
+        - priceMicrocredits
+        - costMicrocredits
+        - tiers
+        - active
+      properties:
+        id:
+          format: uuid
+          type: string
+        providerId:
+          format: uuid
+          type: string
+        modelId:
+          type: string
+        kind:
+          type: string
+        pricingMode:
+          $ref: "#/components/schemas/PricingMode"
+        priceMicrocredits:
+          type: integer
+        costMicrocredits:
+          type: integer
+        tiers:
+          type: object
+          patternProperties:
+            ^(.*)$:
+              type: integer
+        active:
+          type: boolean
+    ProviderModelPriceList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderModelPrice"
+    UpsertProviderModelPriceInput:
+      type: object
+      required:
+        - providerId
+        - modelId
+        - kind
+        - pricingMode
+      properties:
+        providerId:
+          format: uuid
+          type: string
+        modelId:
+          type: string
+        kind:
+          type: string
+        pricingMode:
+          $ref: "#/components/schemas/PricingMode"
+        priceMicrocredits:
+          type: integer
+        costMicrocredits:
+          type: integer
+        tiers:
+          type: object
+          patternProperties:
+            ^(.*)$:
+              type: integer
+        active:
+          type: boolean
+    AuditEvent:
+      type: object
+      required:
+        - id
+        - actor_user_id
+        - action
+        - target_type
+        - target_id
+        - summary
+        - created_at
+      properties:
+        id:
+          format: uuid
+          type: string
+        actor_user_id:
+          format: uuid
+          type: string
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          anyOf:
+            - type: string
+            - type: "null"
+        summary:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+    AuditEventList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        limit:
+          type: integer
+        offset:
+          type: integer
+    PaymentConfig:
+      type: object
+      required:
+        - provider
+        - hasKey
+        - gateway
+        - pid
+        - payType
+        - pricePerCreditCents
+        - publicBaseUrl
+      properties:
+        provider:
+          anyOf:
+            - type: string
+            - type: "null"
+        hasKey:
+          type: boolean
+        gateway:
+          anyOf:
+            - type: string
+            - type: "null"
+        pid:
+          anyOf:
+            - type: string
+            - type: "null"
+        payType:
+          type: string
+        pricePerCreditCents:
+          type: integer
+        publicBaseUrl:
+          type: string
+    PaymentConfigInput:
+      type: object
+      properties:
+        gateway:
+          type: string
+        pid:
+          type: string
+        key:
+          type: string
+        payType:
+          type: string
+        pricePerCreditCents:
+          type: integer
+        publicBaseUrl:
+          type: string
+    PaymentConfigUpdateResult:
+      type: object
+      required:
+        - ok
+        - hasKey
+      properties:
+        ok:
+          type: boolean
+        hasKey:
+          type: boolean
+    PaymentOrderStatus:
+      type: string
+      enum:
+        - created
+        - pending
+        - paid
+        - closed
+        - failed
+    PaymentOrder:
+      type: object
+      required:
+        - id
+        - kind
+        - credits
+        - amountCents
+        - currency
+        - status
+        - provider
+        - tradeNo
+        - paidAt
+        - creditedAt
+        - expiresAt
+        - createdAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        kind:
+          type: string
+        credits:
+          type: number
+        amountCents:
+          type: integer
+        currency:
+          type: string
+        status:
+          $ref: "#/components/schemas/PaymentOrderStatus"
+        provider:
+          type: string
+        tradeNo:
+          anyOf:
+            - type: string
+            - type: "null"
+        paidAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        creditedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        expiresAt:
+          format: date-time
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+    PaymentOrderList:
+      type: object
+      required:
+        - items
+        - pricePerCreditCents
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentOrder"
+        pricePerCreditCents:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    CreateTopupOrderInput:
+      type: object
+      required:
+        - credits
+      properties:
+        credits:
+          exclusiveMinimum: 0
+          type: number
+    CreateTopupOrderResult:
+      type: object
+      required:
+        - order
+        - checkoutUrl
+      properties:
+        order:
+          $ref: "#/components/schemas/PaymentOrder"
+        checkoutUrl:
+          type: string
+    AdminDashboard:
+      type: object
+      required:
+        - users
+        - projects
+        - jobs
+        - billing
+        - credits
+        - payments
+        - storage
+        - display
+      properties:
+        users:
+          type: object
+          required:
+            - total
+            - active
+            - disabled
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            disabled:
+              type: integer
+        projects:
+          type: object
+          required:
+            - total
+            - active
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+        jobs:
+          type: object
+          required:
+            - total
+            - queued
+            - running
+            - succeeded
+            - failed
+            - cancelled
+          properties:
+            total:
+              type: integer
+            queued:
+              type: integer
+            running:
+              type: integer
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            cancelled:
+              type: integer
+        billing:
+          type: object
+          required:
+            - reserved
+            - uncertain
+            - settled
+            - refunded
+            - settledMicrocredits
+          properties:
+            reserved:
+              type: integer
+            uncertain:
+              type: integer
+            settled:
+              type: integer
+            refunded:
+              type: integer
+            settledMicrocredits:
+              type: integer
+        credits:
+          type: object
+          required:
+            - issuedMicrocredits
+            - spentMicrocredits
+            - toppedUpMicrocredits
+          properties:
+            issuedMicrocredits:
+              type: integer
+            spentMicrocredits:
+              type: integer
+            toppedUpMicrocredits:
+              type: integer
+        payments:
+          type: object
+          required:
+            - pending
+            - paid
+            - creditedMicrocredits
+          properties:
+            pending:
+              type: integer
+            paid:
+              type: integer
+            creditedMicrocredits:
+              type: integer
+        storage:
+          type: object
+          required:
+            - patterns
+            - models
+            - assets
+            - outputs
+          properties:
+            patterns:
+              type: integer
+            models:
+              type: integer
+            assets:
+              type: integer
+            outputs:
+              type: integer
+        display:
+          type: object
+          required:
+            - settledCredits
+            - toppedUpCredits
+            - spentCredits
+          properties:
+            settledCredits:
+              type: number
+            toppedUpCredits:
+              type: number
+            spentCredits:
+              type: number
+    BillingPeriod:
+      type: string
+      enum:
+        - none
+        - month
+        - year
+    PlanEntitlements:
+      type: object
+      properties:
+        monthlyCredits:
+          type: integer
+        maxProjects:
+          type: integer
+        maxConcurrentJobs:
+          type: integer
+        maxImageResolution:
+          type: string
+        maxStorageBytes:
+          type: integer
+        allowPsdExport:
+          type: boolean
+        allowLayerExport:
+          type: boolean
+        allowWebResearch:
+          type: boolean
+        allowSuiteForge:
+          type: boolean
+        allowModelLibrary:
+          type: boolean
+        allowPatternStudio:
+          type: boolean
+        watermarkExports:
+          type: boolean
+    Plan:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - description
+        - priceCents
+        - currency
+        - billingPeriod
+        - active
+        - sortOrder
+        - entitlements
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          description: 套餐标识，稳定 slug（如 plan-free），跨环境一致。
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        priceCents:
+          type: integer
+        currency:
+          type: string
+        billingPeriod:
+          $ref: "#/components/schemas/BillingPeriod"
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+        entitlements:
+          $ref: "#/components/schemas/PlanEntitlements"
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+    PlanList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+    AdminPlanPatchInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        priceCents:
+          type: integer
+        billingPeriod:
+          $ref: "#/components/schemas/BillingPeriod"
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+        entitlements:
+          $ref: "#/components/schemas/PlanEntitlements"
+    AdminPaymentOrder:
+      type: object
+      required:
+        - id
+        - userId
+        - kind
+        - planId
+        - creditsMicrocredits
+        - credits
+        - amountCents
+        - currency
+        - status
+        - provider
+        - providerConfig
+        - providerOrderNo
+        - providerTradeNo
+        - paidAt
+        - creditedAt
+        - expiresAt
+        - createdAt
+        - updatedAt
+        - user
+      properties:
+        id:
+          format: uuid
+          type: string
+        userId:
+          format: uuid
+          type: string
+        kind:
+          type: string
+        planId:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: "null"
+        creditsMicrocredits:
+          type: integer
+        credits:
+          type: number
+        amountCents:
+          type: integer
+        currency:
+          type: string
+        status:
+          $ref: "#/components/schemas/PaymentOrderStatus"
+        provider:
+          type: string
+        providerConfig:
+          anyOf:
+            - type: object
+              patternProperties:
+                ^(.*)$: {}
+            - type: "null"
+        providerOrderNo:
+          anyOf:
+            - type: string
+            - type: "null"
+        providerTradeNo:
+          anyOf:
+            - type: string
+            - type: "null"
+        paidAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        creditedAt:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: "null"
+        expiresAt:
+          format: date-time
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/AdminUser"
+            - type: "null"
+    AdminPaymentOrderList:
+      type: object
+      required:
+        - items
+        - limit
+        - offset
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPaymentOrder"
+        limit:
+          type: integer
+        offset:
+          type: integer
+    PaymentReconcile:
+      type: object
+      required:
+        - paidNotCredited
+        - expiredUnpaid
+        - limit
+        - offset
+      properties:
+        paidNotCredited:
+          type: array
+          items:
+            type: object
+            patternProperties:
+              ^(.*)$: {}
+        expiredUnpaid:
+          type: array
+          items:
+            type: object
+            patternProperties:
+              ^(.*)$: {}
+        limit:
+          type: integer
+        offset:
+          type: integer
+    AdminPaymentConfirmInput:
+      type: object
+      properties:
+        tradeNo:
+          type: string
+    AdminPaymentConfirmResult:
+      type: object
+      required:
+        - credited
+        - order
+      properties:
+        credited:
+          type: boolean
+        order:
+          anyOf:
+            - $ref: "#/components/schemas/AdminPaymentOrder"
+            - type: "null"
+    SessionUser:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - role
+        - status
+        - createdAt
+      properties:
+        id:
+          format: uuid
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        status:
+          $ref: "#/components/schemas/AdminUserStatus"
+        createdAt:
+          format: date-time
+          type: string
+    SessionPayload:
+      type: object
+      required:
+        - user
+        - planCode
+        - entitlements
+        - balanceMicrocredits
+        - usedStorageBytes
+      properties:
+        user:
+          $ref: "#/components/schemas/SessionUser"
+        planCode:
+          type: string
+        entitlements:
+          $ref: "#/components/schemas/Entitlements"
+        balanceMicrocredits:
+          type: integer
+        usedStorageBytes:
+          type: integer
+    SessionState:
+      anyOf:
+        - $ref: "#/components/schemas/SessionPayload"
+        - type: object
+          required:
+            - user
+          properties:
+            user:
+              type: "null"
+    RegisterInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        displayName:
+          type: string
+    LoginInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    PasswordResetRequestInput:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+    PasswordResetRequestResult:
+      type: object
+      required:
+        - accepted
+      properties:
+        accepted:
+          const: true
+          type: boolean
+        token:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+    PasswordResetConfirmInput:
+      type: object
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+    ChangePasswordInput:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+    MailSettings:
+      type: object
+      required:
+        - configured
+        - host
+        - port
+        - secure
+        - requireStartTls
+        - user
+        - from
+        - fromName
+        - hasPass
+      properties:
+        configured:
+          type: boolean
+        host:
+          anyOf:
+            - type: string
+            - type: "null"
+        port:
+          type: integer
+        secure:
+          type: boolean
+        requireStartTls:
+          type: boolean
+        user:
+          anyOf:
+            - type: string
+            - type: "null"
+        from:
+          anyOf:
+            - type: string
+            - type: "null"
+        fromName:
+          anyOf:
+            - type: string
+            - type: "null"
+        hasPass:
+          type: boolean
+    MailSettingsInput:
+      type: object
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        secure:
+          type: boolean
+        requireStartTls:
+          type: boolean
+        user:
+          type: string
+        pass:
+          type: string
+        from:
+          type: string
+        fromName:
+          type: string
+    MailSettingsUpdateResult:
+      type: object
+      required:
+        - ok
+        - hasPass
+      properties:
+        ok:
+          type: boolean
+        hasPass:
+          type: boolean
+    MailTestResult:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
           type: boolean

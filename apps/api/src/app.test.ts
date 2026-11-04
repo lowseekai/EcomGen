@@ -33,6 +33,7 @@ import type { FastifyInstance } from "fastify";
 import { EcomRepository, LocalAssetStore, openDatabase } from "@ecomgen/core";
 import { MODEL_SPEC_DEFAULTS, POD_MOCKUP_SCENE_VERSION, TILEABILITY_ALGORITHM_VERSION } from "@ecomgen/contracts";
 import { buildApi, resolveCorsOrigins } from "./app.js";
+import { authenticateTestClient } from "./test-auth.js";
 import { enqueue } from "@ecomgen/jobs";
 
 let dataDir = "";
@@ -62,6 +63,10 @@ beforeEach(async () => {
   // 与 buildApi 共享同一个文件库，保证端点操作和断言看到相同的状态真相
   database = openDatabase(join(dataDir, "ecomgen.sqlite"));
   repository = new EcomRepository(database);
+  // 鉴权钩子已开启：给 inject 默认带上站长会话，用例正文不必逐个补 Cookie。
+  const owner = authenticateTestClient(app, repository);
+  // 用例直接落库造的数据必须归属于登录用户，否则请求侧按归属过滤后看不见自己刚造的行。
+  repository = repository.forOwner(owner.id);
   // enqueue 是模块级共享 mock：逐用例重置到成功实现（once 行为会跨用例排队，只 clear 调用计数不够），
   // 断言不依赖文件内的执行顺序
   vi.mocked(enqueue).mockReset().mockResolvedValue(undefined);

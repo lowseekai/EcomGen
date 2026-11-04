@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { ModelDefinition, ReasoningProtocolProfile } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 export interface ProviderRecord {
@@ -21,7 +21,7 @@ export class ProviderRepository {
   public getProvider(id: string): ProviderRecord | undefined { const row = this.db.prepare("SELECT * FROM providers WHERE id = ?").get(id); return row ? mapProvider(row as Row) : undefined; }
   public saveProvider(input: Omit<ProviderRecord, "id" | "createdAt" | "updatedAt"> & { id?: string }): ProviderRecord {
     const existing = input.id ? this.getProvider(input.id) : undefined;
-    const record: ProviderRecord = { ...input, id: input.id ?? randomUUID(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    const record: ProviderRecord = { ...input, id: input.id ?? newId(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
     this.db.prepare(`INSERT INTO providers (id,name,base_url,reasoning_protocol,encrypted_api_key,models_json,created_at,updated_at)
       VALUES (@id,@name,@baseUrl,@reasoningProtocol,@encryptedApiKey,@models,@createdAt,@updatedAt)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,base_url=excluded.base_url,reasoning_protocol=excluded.reasoning_protocol,encrypted_api_key=excluded.encrypted_api_key,models_json=excluded.models_json,updated_at=excluded.updated_at`)

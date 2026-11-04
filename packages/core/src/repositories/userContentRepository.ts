@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { SuiteDocumentInput } from "@ecomgen/ecom-suite";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, isVisible, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now } from "./internal.js";
 
 /** 用户自定义提示词模板（简化格式）；ID 形如 custom-xxxxxxxx，由 API 层生成。 */
@@ -40,42 +41,44 @@ export interface SuiteForgeResultRecord {
 
 /** 用户内容域：自定义模板、导入套图与反推草稿共享"由用户产生、可随时增删"的生命周期。 */
 export class UserContentRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
   public listUserTemplates(): UserTemplateRecord[] {
-    return (this.db.prepare("SELECT * FROM user_templates ORDER BY created_at ASC").all() as Row[]).map(mapUserTemplate);
+    return (this.db.prepare("SELECT * FROM user_templates ORDER BY created_at ASC").all() as Row[]).filter((row) => isVisible(this.scope, row.owner_id as string | null)).map(mapUserTemplate);
   }
   public getUserTemplate(id: string): UserTemplateRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM user_templates WHERE id = ?").get(id);
-    return row ? mapUserTemplate(row as Row) : undefined;
+    const row = this.db.prepare("SELECT * FROM user_templates WHERE id = ?").get(id) as Row | undefined;
+    return row && isVisible(this.scope, row.owner_id as string | null) ? mapUserTemplate(row as Row) : undefined;
   }
   public saveUserTemplate(input: Omit<UserTemplateRecord, "createdAt" | "updatedAt"> & { id?: string }): UserTemplateRecord {
     const existing = input.id ? this.getUserTemplate(input.id) : undefined;
-    const record: UserTemplateRecord = { ...input, id: input.id ?? randomUUID(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
-    this.db.prepare(`INSERT INTO user_templates (id,name,prompt,default_size,supports_image_reference,created_at,updated_at)
-      VALUES (@id,@name,@prompt,@defaultSize,@supportsImageReference,@createdAt,@updatedAt)
+    const record: UserTemplateRecord = { ...input, id: input.id ?? newId(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    this.db.prepare(`INSERT INTO user_templates (id,owner_id,name,prompt,default_size,supports_image_reference,created_at,updated_at)
+      VALUES (@id,@ownerId,@name,@prompt,@defaultSize,@supportsImageReference,@createdAt,@updatedAt)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,prompt=excluded.prompt,default_size=excluded.default_size,supports_image_reference=excluded.supports_image_reference,updated_at=excluded.updated_at`)
-      .run({ ...record, supportsImageReference: record.supportsImageReference ? 1 : 0 });
+      .run({ ...record, ownerId: ownerValue(this.scope), supportsImageReference: record.supportsImageReference ? 1 : 0 });
     return record;
   }
   public deleteUserTemplate(id: string): boolean {
+    if (!this.getUserTemplate(id)) return false;
     return this.db.prepare("DELETE FROM user_templates WHERE id=?").run(id).changes > 0;
   }
 
   public listUserSuites(): UserSuiteRecord[] {
-    return (this.db.prepare("SELECT * FROM user_suites ORDER BY created_at ASC").all() as Row[]).map(mapUserSuite);
+    return (this.db.prepare("SELECT * FROM user_suites ORDER BY created_at ASC").all() as Row[]).filter((row) => isVisible(this.scope, row.owner_id as string | null)).map(mapUserSuite);
   }
   public getUserSuite(id: string): UserSuiteRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM user_suites WHERE id = ?").get(id);
-    return row ? mapUserSuite(row as Row) : undefined;
+    const row = this.db.prepare("SELECT * FROM user_suites WHERE id = ?").get(id) as Row | undefined;
+    return row && isVisible(this.scope, row.owner_id as string | null) ? mapUserSuite(row as Row) : undefined;
   }
   public saveUserSuite(input: Omit<UserSuiteRecord, "createdAt" | "updatedAt"> & { id?: string }): UserSuiteRecord {
     const existing = input.id ? this.getUserSuite(input.id) : undefined;
-    const record: UserSuiteRecord = { ...input, id: input.id ?? randomUUID(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
-    this.db.prepare(`INSERT INTO user_suites (id,name,l1,l2,leaf,product_family,payload_json,created_at,updated_at)
-      VALUES (@id,@name,@l1,@l2,@leaf,@productFamily,@payloadJson,@createdAt,@updatedAt)
+    const record: UserSuiteRecord = { ...input, id: input.id ?? newId(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    this.db.prepare(`INSERT INTO user_suites (id,owner_id,name,l1,l2,leaf,product_family,payload_json,created_at,updated_at)
+      VALUES (@id,@ownerId,@name,@l1,@l2,@leaf,@productFamily,@payloadJson,@createdAt,@updatedAt)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,l1=excluded.l1,l2=excluded.l2,leaf=excluded.leaf,product_family=excluded.product_family,payload_json=excluded.payload_json,updated_at=excluded.updated_at`)
       .run({
+        ownerId: ownerValue(this.scope),
         id: record.id,
         name: record.name,
         l1: record.l1,

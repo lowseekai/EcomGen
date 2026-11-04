@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { resolveDataDir } from "@ecomgen/core";
 import { buildApi } from "./app.js";
+import { corsOriginsFromEnv } from "./cors.js";
 
 const masterKey = process.env.ECOMGEN_MASTER_KEY;
 if (!masterKey) throw new Error("ECOMGEN_MASTER_KEY must be a base64-encoded 32-byte key");
@@ -10,6 +11,12 @@ const app = await buildApi({
   redisUrl: process.env.REDIS_URL ?? "redis://127.0.0.1:6379",
   masterKey,
   corsOrigins: corsOriginsFromEnv(process.env.ECOMGEN_CORS_ORIGINS),
+  // 生产走 HTTPS 必须开启；本地 http 调试保持关闭，否则浏览器不回传会话 cookie。
+  secureCookies: process.env.ECOMGEN_SECURE_COOKIES === "true",
+  bootstrap: {
+    email: process.env.ECOMGEN_BOOTSTRAP_EMAIL,
+    password: process.env.ECOMGEN_BOOTSTRAP_PASSWORD,
+  },
 });
 await app.listen({ host: process.env.HOST ?? "127.0.0.1", port: Number(process.env.PORT ?? 8787) });
 
@@ -21,12 +28,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     forceTimer.unref();
     void app.close().finally(() => process.exit(0));
   });
-}
-
-/** ECOMGEN_CORS_ORIGINS 是逗号分隔的来源白名单；显式设置为空视为配置错误而非静默回退。 */
-function corsOriginsFromEnv(raw: string | undefined): string[] | undefined {
-  if (raw === undefined) return undefined;
-  const entries = raw.split(",").map((entry) => entry.trim());
-  if (entries.some((entry) => entry === "")) throw new Error("ECOMGEN_CORS_ORIGINS must not contain empty origins");
-  return entries;
 }

@@ -4,11 +4,14 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   EcomRepository,
   LocalAssetStore,
+  checkConcurrency,
+  checkStorageQuota,
   type JobRecord,
   type LibraryItemRecord,
   type ModelRecord,
   type PatternPipelineWithSteps,
   type PatternRecord,
+  type UserRecord,
 } from "@ecomgen/core";
 import {
   ASSET_ROLES,
@@ -221,4 +224,61 @@ export function assertProjectAssetHashUnique(repository: Pick<EcomRepository, "l
   if (repository.listAssets(projectId).some((asset) => asset.hash === hash)) {
     throw new ApiError(400, "VALIDATION_ERROR", "相同图片已上传到项目");
   }
+}
+
+/** 受套餐开关控制的功能。owner/admin 走无限权益，不受影响。 */
+export type GatedFeature = "allowPsdExport" | "allowLayerExport" | "allowWebResearch" | "allowSuiteForge" | "allowModelLibrary" | "allowPatternStudio";
+
+const FEATURE_LABELS: Record<GatedFeature, string> = {
+  allowPsdExport: "PSD 导出",
+  allowLayerExport: "分层导出",
+  allowWebResearch: "联网研究",
+  allowSuiteForge: "套图反推",
+  allowModelLibrary: "模特库",
+  allowPatternStudio: "花型工坊",
+};
+
+/**
+ * 套餐功能开关。
+ *
+ * 这些字段之前只在管理端可编辑、没有任何地方判定，等于配了不生效。
+ * 用 403 而不是 402：402 语义是"付款后可用"，403 更贴近"当前套餐不含该功能"，
+ * 前端据此引导升级。
+ */
+export function assertFeature(repository: EcomRepository, user: UserRecord, feature: GatedFeature): void {
+  const { entitlements, planCode } = repository.resolveEntitlements(user);
+  if (entitlements[feature]) return;
+  throw new ApiError(403, "CAPABILITY_UNSUPPORTED", `${FEATURE_LABELS[feature]}不在当前套餐（${planCode}）内，请升级后使用`);
+}
+
+/** 分辨率由低到高：套餐上限低于请求值时拒绝，而不是静默降级（用户会以为出了高清图）。 */
+const RESOLUTION_RANK: Record<string, number> = { "1K": 1, "2K": 2, "4K": 3 };
+
+export function assertResolutionAllowed(repository: EcomRepository, user: UserRecord, requested: string): void {
+  const { entitlements, planCode } = repository.resolveEntitlements(user);
+  const allowed = RESOLUTION_RANK[entitlements.maxImageResolution] ?? 0;
+  if ((RESOLUTION_RANK[requested] ?? 0) <= allowed) return;
+  throw new ApiError(403, "CAPABILITY_UNSUPPORTED", `当前套餐（${planCode}）最高支持 ${entitlements.maxImageResolution} 分辨率，请升级后使用 ${requested}`);
+}
+
+/**
+ * 存储配额：必须在落盘之前判断。
+ *
+ * 反过来（先写文件再拒绝）会在磁盘上留下一个没有数据库行引用的孤儿文件，
+ * 既占额度又没人能删——删除入口是按记录走的。
+ */
+export function assertStorageQuota(repository: EcomRepository, user: UserRecord, incomingBytes: number): void {
+  const { entitlements } = repository.resolveEntitlements(user);
+  const violation = checkStorageQuota(repository, user.id, entitlements, incomingBytes);
+  if (!violation) return;
+  // 具体是哪种配额放在 details 里，前端据此区分"存储满了"和"项目满了"。
+  throw new ApiError(413, "QUOTA_EXCEEDED", violation.message, [{ path: "quota", reason: violation.code }]);
+}
+
+/** 并发配额：建任务前调用，超限直接拒绝而不是让它排队。 */
+export function assertConcurrencyQuota(repository: EcomRepository, user: UserRecord): void {
+  const { entitlements } = repository.resolveEntitlements(user);
+  const violation = checkConcurrency(repository, user.id, entitlements);
+  if (!violation) return;
+  throw new ApiError(429, "QUOTA_EXCEEDED", violation.message, [{ path: "quota", reason: violation.code }]);
 }

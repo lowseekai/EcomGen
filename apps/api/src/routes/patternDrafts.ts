@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import sharp from "sharp";
 import type { DraftBatchRecord, DraftCandidateRecord, DraftMediaRecord, DraftSlotRecord, JobRecord, PatternDraftRecord } from "@ecomgen/core";
 import type { EcomRepository, LocalAssetStore } from "@ecomgen/core";
@@ -41,6 +41,7 @@ import type {
   PatternDraft,
   SegmentationProtocol,
 } from "@ecomgen/contracts";
+import { createChargedJob } from "../charged-jobs.js";
 import type { ApiContext } from "../context.js";
 import { ApiError } from "../errors.js";
 import { assertTransparentBackground, contentHash, missing, readImageMultipart, resolveSegmentationModel, sendStored, verifyModel } from "../helpers.js";
@@ -534,7 +535,7 @@ export function registerPatternDraftRoutes(app: FastifyInstance, ctx: ApiContext
   app.post("/api/v1/pattern-drafts/:draftId/batches", async (request, reply) => {
     const draft = ensureDraft(repository, parameter(request, "draftId"));
     const body = parseBody(CreateDraftBatchInput, request.body);
-    const outcome = await submitDraftBatch(draft, body, undefined);
+    const outcome = await submitDraftBatch(request, draft, body, undefined);
     return reply.code(202).send(outcome);
   });
 
@@ -554,7 +555,7 @@ export function registerPatternDraftRoutes(app: FastifyInstance, ctx: ApiContext
     }
     const mapping = DRAFT_JOB_BY_OPERATION[batch.operation];
     const slots = failed.map((slot) => slot.index);
-    const job = repository.createJob({ id: randomUUID(), projectId: null, storyboardItemId: null, type: mapping.type, input: { draftId: draft.id, batchId: batch.id, slots, task: "BATCH", retry: true }, requestFingerprint: null, providerId: batch.providerId, modelId: batch.imageModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } });
+    const job = createChargedJob(ctx, request, { id: randomUUID(), projectId: null, storyboardItemId: null, type: mapping.type, input: { draftId: draft.id, batchId: batch.id, slots, task: "BATCH", retry: true }, requestFingerprint: null, providerId: batch.providerId, modelId: batch.imageModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } }, { kind: "image", providerId: batch.providerId, modelId: batch.imageModelId, units: slots.length });
     repository.assignDraftSlotsToJob(batch.id, slots, job.id, true);
     await enqueueOrMarkFailed(job, mapping.kind, { onFail: (jobId) => markDraftSlotsFailed(repository, batch.id, slots, jobId) });
     // 槽位刚被重新指派到新任务，读回最新的 jobId 再组装响应。
@@ -567,7 +568,7 @@ export function registerPatternDraftRoutes(app: FastifyInstance, ctx: ApiContext
     const draft = ensureDraft(repository, parameter(request, "draftId"));
     const candidate = ensureDraftCandidate(repository, draft.id, parameter(request, "candidateId"));
     const body = parseBody(CreateDraftBatchInput, request.body);
-    const outcome = await submitDraftBatch(draft, body, candidate.id);
+    const outcome = await submitDraftBatch(request, draft, body, candidate.id);
     return reply.code(202).send(outcome);
   });
 
@@ -631,7 +632,7 @@ export function registerPatternDraftRoutes(app: FastifyInstance, ctx: ApiContext
   });
 
   /** 提交批次：批次、槽位、任务与入队要么一起成立，要么在参数校验阶段就失败（不落半个批次）。 */
-  async function submitDraftBatch(draft: PatternDraftRecord, body: CreateDraftBatchInput, parentOverride: string | undefined): Promise<CreateDraftBatchResponse> {
+  async function submitDraftBatch(request: FastifyRequest, draft: PatternDraftRecord, body: CreateDraftBatchInput, parentOverride: string | undefined): Promise<CreateDraftBatchResponse> {
     const operation = enumValue(body.operation, DRAFT_BATCH_OPERATIONS, "operation");
     const parentCandidateId = parentOverride ?? body.parentCandidateId ?? null;
     validateOperationInput(body, parentCandidateId);
@@ -705,17 +706,20 @@ export function registerPatternDraftRoutes(app: FastifyInstance, ctx: ApiContext
     const mapping = DRAFT_JOB_BY_OPERATION[operation];
     const stored = repository.createDraftBatch({ draftId: draft.id, operation, parentCandidateId, providerId: segmentation?.providerId ?? body.providerId ?? null, imageModelId: segmentation?.modelId ?? body.imageModelId ?? null, candidateCount, instruction: body.instruction ?? null, snapshot: { ...snapshot, _hash: snapshotHash }, clientKey: body.clientKey });
     const slots = stored.slots.map((slot) => slot.index);
-    const job = repository.createJob({
+    // RECOLOR 是纯本地改色，不调用 Provider；其余操作按分割或生图计费。
+    const chargeProviderId = segmentation?.providerId ?? body.providerId ?? null;
+    const chargeModelId = segmentation?.modelId ?? body.imageModelId ?? null;
+    const job = createChargedJob(ctx, request, {
       id: randomUUID(),
       projectId: null,
       storyboardItemId: null,
       type: mapping.type,
       input: { draftId: draft.id, batchId: stored.batch.id, slots, task: "BATCH", snapshotHash },
       requestFingerprint: null,
-      providerId: segmentation?.providerId ?? body.providerId ?? null,
-      modelId: segmentation?.modelId ?? body.imageModelId ?? null,
+      providerId: chargeProviderId,
+      modelId: chargeModelId,
       estimatedCost: operation === "RECOLOR" ? null : { status: "UNKNOWN", unit: "provider-defined" },
-    });
+    }, { kind: operation === "RECOLOR" ? "image" : segmentation ? "segmentation" : "image", providerId: operation === "RECOLOR" ? null : chargeProviderId, modelId: operation === "RECOLOR" ? null : chargeModelId, units: slots.length });
     repository.assignDraftSlotsToJob(stored.batch.id, slots, job.id, false);
     await enqueueOrMarkFailed(job, mapping.kind, { onFail: (jobId) => markDraftSlotsFailed(repository, stored.batch.id, slots, jobId) });
     const storedSlots = repository.listDraftSlots(stored.batch.id);

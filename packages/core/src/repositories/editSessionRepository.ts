@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { EditSessionStatus, EditTurnStatus, ReferencePurpose, ReferenceSelection } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { SYSTEM_SCOPE, ownerClause, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 export interface EditSessionRecord {
@@ -40,11 +41,18 @@ export interface EditTurnRecord {
 export interface EditReferenceAssetRecord { id: string; projectId: string; sessionId: string; turnId: string | null; storagePath: string; hash: string; originalName: string; mimeType: string; purpose: ReferencePurpose; createdAt: string; expiresAt: string; }
 
 export class EditSessionRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
+
+  /** 子表没有 owner_id：归属经父项目推导。找不到父项目即视为不可见。 */
+  private visibleProject(projectId: string | null | undefined): boolean {
+    if (!projectId) return false;
+    const owner = ownerClause(this.scope, "owner_id");
+    return this.db.prepare(`SELECT 1 FROM projects WHERE id=?${owner.sql}`).get(projectId, ...owner.params) !== undefined;
+  }
 
   public getEditSession(id: string): EditSessionRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM edit_sessions WHERE id=?").get(id);
-    return row ? mapEditSession(row as Row) : undefined;
+    const row = this.db.prepare("SELECT * FROM edit_sessions WHERE id=?").get(id) as Row | undefined;
+    return row && this.visibleProject(row.project_id as string) ? mapEditSession(row as Row) : undefined;
   }
   public getActiveEditSession(projectId: string, outputId: string): EditSessionRecord | undefined {
     const row = this.db.prepare("SELECT DISTINCT edit_sessions.* FROM edit_sessions LEFT JOIN outputs ON outputs.edit_session_id=edit_sessions.id WHERE edit_sessions.project_id=? AND edit_sessions.status='ACTIVE' AND (edit_sessions.current_output_id=? OR outputs.id=?) ORDER BY edit_sessions.updated_at DESC LIMIT 1").get(projectId, outputId, outputId);
@@ -62,8 +70,8 @@ export class EditSessionRepository {
     return next;
   }
   public getEditTurn(id: string): EditTurnRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM edit_turns WHERE id=?").get(id);
-    return row ? mapEditTurn(row as Row) : undefined;
+    const row = this.db.prepare("SELECT * FROM edit_turns WHERE id=?").get(id) as Row | undefined;
+    return row && this.visibleProject(row.project_id as string) ? mapEditTurn(row as Row) : undefined;
   }
   public listEditTurns(sessionId: string): EditTurnRecord[] { return (this.db.prepare("SELECT * FROM edit_turns WHERE session_id=? ORDER BY created_at ASC").all(sessionId) as Row[]).map(mapEditTurn); }
   public createEditTurn(input: Omit<EditTurnRecord, "createdAt" | "updatedAt" | "referenceSelections"> & { referenceSelections?: ReferenceSelection[] }): EditTurnRecord {
@@ -74,8 +82,9 @@ export class EditSessionRepository {
   }
   public listEditReferenceAssets(sessionId: string): EditReferenceAssetRecord[] { return (this.db.prepare("SELECT * FROM edit_reference_assets WHERE session_id=? ORDER BY created_at ASC").all(sessionId) as Row[]).map(mapEditReferenceAsset); }
   public createEditReferenceAsset(input: Omit<EditReferenceAssetRecord, "createdAt">): EditReferenceAssetRecord { const record = { ...input, createdAt: now() }; this.db.prepare("INSERT INTO edit_reference_assets (id,project_id,session_id,turn_id,storage_path,hash,original_name,mime_type,purpose,created_at,expires_at) VALUES (@id,@projectId,@sessionId,@turnId,@storagePath,@hash,@originalName,@mimeType,@purpose,@createdAt,@expiresAt)").run(record); return record; }
-  public getEditReferenceAsset(id: string): EditReferenceAssetRecord | undefined { const row = this.db.prepare("SELECT * FROM edit_reference_assets WHERE id=?").get(id); return row ? mapEditReferenceAsset(row as Row) : undefined; }
-  public deleteEditReferenceAsset(id: string): void { this.db.prepare("DELETE FROM edit_reference_assets WHERE id=?").run(id); }
+  public getEditReferenceAsset(id: string): EditReferenceAssetRecord | undefined { const row = this.db.prepare("SELECT * FROM edit_reference_assets WHERE id=?").get(id) as Row | undefined; return row && this.visibleProject(row.project_id as string) ? mapEditReferenceAsset(row) : undefined; }
+  /** 先走带作用域的读取再删：只按 id 删会让任何拿到 id 的人删掉别人的素材文件。 */
+  public deleteEditReferenceAsset(id: string): void { if (!this.getEditReferenceAsset(id)) return; this.db.prepare("DELETE FROM edit_reference_assets WHERE id=?").run(id); }
   public attachEditReferenceAssets(sessionId: string, turnId: string, ids: string[]): void {
     if (!ids.length) return;
     const statement = this.db.prepare("UPDATE edit_reference_assets SET turn_id=? WHERE id=? AND session_id=? AND turn_id IS NULL");

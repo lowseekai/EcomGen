@@ -5,7 +5,10 @@ import { requestFingerprint } from "@ecomgen/core";
 import { CreateExportJobRequest, CreateLayerExportInput, CreateLayerPlanInput, SEGMENTATION_PROTOCOL_CAPABILITIES } from "@ecomgen/contracts";
 import type { ApiContext } from "../context.js";
 import { ApiError } from "../errors.js";
-import { ensureProject, markDomainRecordFailed, missing, readSegmentationModel } from "../helpers.js";
+import { currentUser } from "../auth-guard.js";
+import { ensureProject, markDomainRecordFailed, missing, readSegmentationModel,
+  assertFeature,
+} from "../helpers.js";
 import { parseBody } from "../http-input.js";
 import { parameter } from "../input-normalizers.js";
 
@@ -22,7 +25,9 @@ function publicLayerExport(record: LayerExportRecord): object {
 
 export function registerOutputRoutes(app: FastifyInstance, ctx: ApiContext): void {
   const { repository, enqueueOrMarkFailed } = ctx;
-  app.get("/api/v1/projects/:projectId/outputs", async (request) => repository.listOutputs(parameter(request, "projectId")));
+  // 先校验项目归属再列输出：只靠 listOutputs 自身过滤会返回 200 + 空数组，
+  // 等于告诉调用方"这个项目存在但不是你的"——统一按 404 处理，不泄露存在性。
+  app.get("/api/v1/projects/:projectId/outputs", async (request) => { const projectId = parameter(request, "projectId"); ensureProject(repository, projectId); return repository.listOutputs(projectId); });
   app.post("/api/v1/projects/:projectId/export-jobs", async (request, reply) => { const projectId = parameter(request, "projectId"); ensureProject(repository, projectId); const body = parseBody(CreateExportJobRequest, request.body ?? {}); const input = { outputIds: body.outputIds, filenamePrefix: body.filenamePrefix }; const fingerprint = requestFingerprint({ type: "EXPORT", projectId, input, idempotencyKey: request.headers["idempotency-key"] ?? null }); const existing = repository.findJobByFingerprint(projectId, fingerprint); if (existing) { const exportRecord = repository.getExportByJobId(existing.id); return reply.code(existing.status === "SUCCEEDED" ? 200 : 202).send({ job: existing, export: exportRecord ?? null }); } const job = repository.createJob({ id: randomUUID(), projectId, storyboardItemId: null, type: "EXPORT", input, requestFingerprint: fingerprint, estimatedCost: { status: "UNKNOWN", unit: "local-storage" } }); const exportRecord = repository.createExport({ projectId, jobId: job.id, status: "QUEUED", storagePath: null }); await enqueueOrMarkFailed(job, "export", { onFail: (failedJobId) => { const pendingExport = repository.getExportByJobId(failedJobId); if (pendingExport) repository.updateExport(pendingExport.id, { status: "FAILED" }); } }); return reply.code(202).send({ job, export: exportRecord }); });
   app.get("/api/v1/exports/:exportId", async (request) => { const result = repository.getExport(parameter(request, "exportId")); if (!result) missing("export", parameter(request, "exportId")); return result; });
   app.get("/api/v1/outputs/:outputId/layer-plan", async (request) => {
@@ -66,6 +71,7 @@ export function registerOutputRoutes(app: FastifyInstance, ctx: ApiContext): voi
     return { exports: repository.listLayerExportsByOutput(output.id).map(publicLayerExport) };
   });
   app.post("/api/v1/outputs/:outputId/layer-exports", async (request, reply) => {
+    assertFeature(repository, currentUser(request), "allowLayerExport");
     const output = repository.getOutput(parameter(request, "outputId"));
     if (!output) missing("output", parameter(request, "outputId"));
     const project = repository.getProject(output.projectId);

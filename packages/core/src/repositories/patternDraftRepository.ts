@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { DraftBatchOperation, DraftComposeType, DraftMediaRole, DraftMediaSource, DraftSlotStatus, TileableStatus } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 /**
@@ -94,25 +95,27 @@ export type UpdateDraftResult =
   | { status: "missing" };
 
 export class PatternDraftRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
   // ---- drafts ----
 
   public listDrafts(includeArchived = false): PatternDraftRecord[] {
+    const owner = ownerClause(this.scope);
     const sql = includeArchived
-      ? "SELECT * FROM pattern_drafts ORDER BY updated_at DESC, id DESC"
-      : "SELECT * FROM pattern_drafts WHERE archived_at IS NULL ORDER BY updated_at DESC, id DESC";
-    return (this.db.prepare(sql).all() as Row[]).map(mapDraft);
+      ? "SELECT * FROM pattern_drafts WHERE 1=1" + owner.sql + " ORDER BY updated_at DESC, id DESC"
+      : "SELECT * FROM pattern_drafts WHERE archived_at IS NULL" + owner.sql + " ORDER BY updated_at DESC, id DESC";
+    return (this.db.prepare(sql).all(...owner.params) as Row[]).map(mapDraft);
   }
 
   public getDraft(id: string): PatternDraftRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM pattern_drafts WHERE id=?").get(id);
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT * FROM pattern_drafts WHERE id=?${owner.sql}`).get(id, ...owner.params);
     return row ? mapDraft(row as Row) : undefined;
   }
 
   public createDraft(input: { name: string; composeType: DraftComposeType; conditions: Record<string, unknown> }): PatternDraftRecord {
     const record: PatternDraftRecord = {
-      id: randomUUID(),
+      id: newId(),
       name: input.name,
       composeType: input.composeType,
       conditions: input.conditions,
@@ -123,9 +126,9 @@ export class PatternDraftRepository {
       createdAt: now(),
       updatedAt: now(),
     };
-    this.db.prepare(`INSERT INTO pattern_drafts (id,name,compose_type,conditions_json,revision,selected_candidate_id,compare_candidate_id,archived_at,created_at,updated_at)
-      VALUES (@id,@name,@composeType,@conditions,@revision,@selectedCandidateId,@compareCandidateId,@archivedAt,@createdAt,@updatedAt)`)
-      .run({ ...record, conditions: json(record.conditions) });
+    this.db.prepare(`INSERT INTO pattern_drafts (id,owner_id,name,compose_type,conditions_json,revision,selected_candidate_id,compare_candidate_id,archived_at,created_at,updated_at)
+      VALUES (@id,@ownerId,@name,@composeType,@conditions,@revision,@selectedCandidateId,@compareCandidateId,@archivedAt,@createdAt,@updatedAt)`)
+      .run({ ...record, ownerId: ownerValue(this.scope), conditions: json(record.conditions) });
     return record;
   }
 
@@ -185,7 +188,7 @@ export class PatternDraftRepository {
   public createMedia(input: Omit<DraftMediaRecord, "id" | "createdAt" | "ordinal">): DraftMediaRecord {
     return this.db.transaction(() => {
       const ordinal = input.role === "REFERENCE" ? this.takeNextMediaOrdinal(input.draftId) : null;
-      const record: DraftMediaRecord = { ...input, ordinal, id: randomUUID(), createdAt: now() };
+      const record: DraftMediaRecord = { ...input, ordinal, id: newId(), createdAt: now() };
       this.db.prepare(`INSERT INTO draft_media (id,draft_id,role,source,source_pattern_id,storage_path,file_hash,mime_type,width,height,original_name,notes,ordinal,created_at)
         VALUES (@id,@draftId,@role,@source,@sourcePatternId,@storagePath,@fileHash,@mimeType,@width,@height,@originalName,@notes,@ordinal,@createdAt)`)
         .run(record);
@@ -233,7 +236,7 @@ export class PatternDraftRepository {
   /** 建批次并一次性生成固定槽位；槽位从 1 起编号，之后只改状态不换序号。 */
   public createBatch(input: Omit<DraftBatchRecord, "id" | "createdAt">): { batch: DraftBatchRecord; slots: DraftSlotRecord[] } {
     const create = this.db.transaction(() => {
-      const batch: DraftBatchRecord = { ...input, id: randomUUID(), createdAt: now() };
+      const batch: DraftBatchRecord = { ...input, id: newId(), createdAt: now() };
       this.db.prepare(`INSERT INTO draft_batches (id,draft_id,operation,parent_candidate_id,provider_id,image_model_id,candidate_count,instruction,snapshot_json,client_key,created_at)
         VALUES (@id,@draftId,@operation,@parentCandidateId,@providerId,@imageModelId,@candidateCount,@instruction,@snapshot,@clientKey,@createdAt)`)
         .run({ ...batch, snapshot: json(batch.snapshot) });
@@ -331,7 +334,7 @@ export class PatternDraftRepository {
   public createCandidate(input: Omit<DraftCandidateRecord, "id" | "createdAt" | "tileable" | "tileableScore" | "tileableCheckedWith" | "tileableHorizontal" | "tileableVertical"> & Partial<Pick<DraftCandidateRecord, "id" | "tileable" | "tileableScore" | "tileableCheckedWith" | "tileableHorizontal" | "tileableVertical">>): DraftCandidateRecord {
     const existing = this.db.prepare("SELECT * FROM draft_candidates WHERE batch_id=? AND slot_index=? LIMIT 1").get(input.batchId, input.slotIndex) as Row | undefined;
     if (existing) return mapCandidate(existing);
-    const record: DraftCandidateRecord = { tileable: "NONE", tileableScore: null, tileableCheckedWith: null, tileableHorizontal: null, tileableVertical: null, ...input, id: input.id ?? randomUUID(), createdAt: now() };
+    const record: DraftCandidateRecord = { tileable: "NONE", tileableScore: null, tileableCheckedWith: null, tileableHorizontal: null, tileableVertical: null, ...input, id: input.id ?? newId(), createdAt: now() };
     this.db.prepare(`INSERT INTO draft_candidates (id,draft_id,batch_id,slot_index,parent_candidate_id,storage_path,file_hash,mime_type,width,height,transform,has_alpha,tileable_status,tileable_score,tileable_checked_with,tileable_horizontal,tileable_vertical,created_at)
       VALUES (@id,@draftId,@batchId,@slotIndex,@parentCandidateId,@storagePath,@fileHash,@mimeType,@width,@height,@transform,@hasAlpha,@tileable,@tileableScore,@tileableCheckedWith,@tileableHorizontal,@tileableVertical,@createdAt)`)
       .run({ ...record, hasAlpha: record.hasAlpha ? 1 : 0 });
@@ -366,18 +369,12 @@ export class PatternDraftRepository {
   /**
    * 该存储路径是否被本草稿的任一已提交批次快照引用。
    *
-   * 快照里只有参考图与改稿笔迹携带存储路径（候选只以 id 出现，见 draftReferenceRows 与 submitDraftBatch 的
-   * snapshot 构造），所以用 json_extract 直接命中这两个位置，不再把整份快照字符串化后做子串扫描。
+   * 在应用层扫描：每个草稿的批次数是个位数，而 SQL 侧的 `json_extract` / `json_each`
+   * 是 SQLite 专有写法（PostgreSQL 没有同名函数），为这点数据量绑死方言不值得。
    */
   public isStoragePathReferenced(draftId: string, storagePath: string): boolean {
-    const row = this.db.prepare(
-      `SELECT 1 AS hit FROM draft_batches
-        WHERE draft_id=? AND (
-          json_extract(snapshot_json, '$.annotation.storagePath')=?
-          OR EXISTS (SELECT 1 FROM json_each(snapshot_json, '$.references') WHERE json_extract(value, '$.storagePath')=?)
-        ) LIMIT 1`,
-    ).get(draftId, storagePath, storagePath) as Row | undefined;
-    return Boolean(row);
+    const rows = this.db.prepare("SELECT snapshot_json FROM draft_batches WHERE draft_id=?").all(draftId) as Row[];
+    return rows.some((row) => snapshotReferencesPath(row.snapshot_json, storagePath));
   }
 
   /** 按内容 hash 找一张草稿图（参考图/改稿笔迹/候选）的存储路径，供缩略图惰性生成。 */
@@ -458,4 +455,18 @@ function mapCandidate(row: Row): DraftCandidateRecord {
     tileableVertical: row.tileable_vertical == null ? null : Number(row.tileable_vertical),
     createdAt: String(row.created_at),
   };
+}
+
+/**
+ * 快照里只有参考图与改稿笔迹携带存储路径（候选只以 id 出现），命中这两处即可。
+ * 解析失败按"未引用"处理：宁可多留一个文件，也不要误删被引用的图。
+ */
+function snapshotReferencesPath(raw: unknown, storagePath: string): boolean {
+  try {
+    const snapshot = parse<{ annotation?: { storagePath?: unknown }; references?: Array<{ storagePath?: unknown }> }>(raw);
+    if (snapshot?.annotation?.storagePath === storagePath) return true;
+    return Array.isArray(snapshot?.references) && snapshot.references.some((reference) => reference?.storagePath === storagePath);
+  } catch {
+    return false;
+  }
 }

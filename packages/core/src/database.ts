@@ -888,6 +888,475 @@ function migrate(database: SqliteDatabase): void {
   // 每个模特至多一张选定定妆照：先清后设的切换写法在事务内满足该唯一约束。
   database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_model_portraits_selected ON model_portraits(model_id) WHERE selected = 1");
   backfillModelSpecDimensions(database);
+  migrateSaasFoundation(database);
+}
+
+/** 补列工具：SQLite 的 ADD COLUMN 不支持 IF NOT EXISTS，统一靠 PRAGMA 判重。 */
+function addColumnIfMissing(database: SqliteDatabase, table: string, column: string, definition: string): void {
+  if (columnNames(database, table).has(column)) return;
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+/**
+ * SaaS 基础层：身份、归属、套餐权益、积分账本、计费、支付、存储统计。
+ *
+ * 只建 schema，不建数据：
+ * - 引导管理员（bootstrap owner）由 API 启动期创建，因为需要密码哈希，属于应用层职责；
+ * - 存量行的 owner_id 回填也在启动期由 claimOrphanRows 完成，见 packages/core/src/repositories/userRepository.ts。
+ *
+ * 所有新表使用可移植 SQL（无 SQLite 专有语法），为后续 PostgreSQL 迁移留门。
+ */
+function migrateSaasFoundation(database: SqliteDatabase): void {
+  database.exec(`
+    -- ---- 身份与会话 ----
+    CREATE TABLE IF NOT EXISTS users (
+      id                TEXT PRIMARY KEY,
+      email             TEXT NOT NULL UNIQUE,
+      password_hash     TEXT NOT NULL,
+      display_name      TEXT NOT NULL,
+      role              TEXT NOT NULL DEFAULT 'user',
+      status            TEXT NOT NULL DEFAULT 'active',
+      email_verified_at TEXT,
+      created_at        TEXT NOT NULL,
+      updated_at        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_users_role_status ON users(role, status);
+
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id           TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      token_hash   TEXT NOT NULL UNIQUE,
+      user_agent   TEXT,
+      ip           TEXT,
+      created_at   TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      expires_at   TEXT NOT NULL,
+      revoked_at   TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id, expires_at);
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at    TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id, expires_at);
+
+    -- 登录审计：失败行 user_id 为空（此时还不知道是谁）。
+    CREATE TABLE IF NOT EXISTS login_events (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT,
+      email      TEXT NOT NULL,
+      ip         TEXT,
+      user_agent TEXT,
+      outcome    TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_login_events_created ON login_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_login_events_email ON login_events(email, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS admin_audit_events (
+      id            TEXT PRIMARY KEY,
+      actor_user_id TEXT NOT NULL,
+      action        TEXT NOT NULL,
+      target_type   TEXT NOT NULL,
+      target_id     TEXT,
+      summary       TEXT NOT NULL,
+      data_json     TEXT NOT NULL DEFAULT '{}',
+      created_at    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_events(target_type, target_id);
+
+    -- 全局开关与站点配置，值一律 JSON。
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- ---- 套餐与权益 ----
+    CREATE TABLE IF NOT EXISTS plans (
+      id             TEXT PRIMARY KEY,
+      code           TEXT NOT NULL UNIQUE,
+      name           TEXT NOT NULL,
+      description    TEXT NOT NULL DEFAULT '',
+      price_cents    INTEGER NOT NULL DEFAULT 0,
+      currency       TEXT NOT NULL DEFAULT 'CNY',
+      billing_period TEXT NOT NULL DEFAULT 'none',
+      active         INTEGER NOT NULL DEFAULT 1,
+      sort_order     INTEGER NOT NULL DEFAULT 0,
+      created_at     TEXT NOT NULL,
+      updated_at     TEXT NOT NULL
+    );
+
+    -- 权益键值：value_json 存标量，避免为每个权益加一列。
+    CREATE TABLE IF NOT EXISTS plan_entitlements (
+      plan_id    TEXT NOT NULL,
+      key        TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      PRIMARY KEY (plan_id, key),
+      FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id                   TEXT PRIMARY KEY,
+      user_id              TEXT NOT NULL,
+      plan_id              TEXT NOT NULL,
+      status               TEXT NOT NULL,
+      current_period_start TEXT NOT NULL,
+      current_period_end   TEXT NOT NULL,
+      cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+      created_at           TEXT NOT NULL,
+      updated_at           TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (plan_id) REFERENCES plans(id)
+    );
+    -- 每个用户至多一个生效订阅；部分唯一索引直接兜住并发开通。
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_active_user ON subscriptions(user_id) WHERE status = 'active';
+
+    -- ---- 积分账本 ----
+    -- 余额是派生缓存，真相是不可变的 credit_ledger_entries；任何写入都必须在同一事务内同时落两者。
+    CREATE TABLE IF NOT EXISTS credit_accounts (
+      user_id              TEXT PRIMARY KEY,
+      balance_microcredits INTEGER NOT NULL DEFAULT 0,
+      updated_at           TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- 只允许 INSERT：改错用反向流水冲正，不允许 UPDATE/DELETE 历史。
+    CREATE TABLE IF NOT EXISTS credit_ledger_entries (
+      id                         TEXT PRIMARY KEY,
+      user_id                    TEXT NOT NULL,
+      type                       TEXT NOT NULL,
+      amount_microcredits        INTEGER NOT NULL,
+      balance_after_microcredits INTEGER NOT NULL,
+      job_id                     TEXT,
+      project_id                 TEXT,
+      billing_order_id           TEXT,
+      payment_order_id           TEXT,
+      note                       TEXT,
+      created_at                 TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_ledger_user_created ON credit_ledger_entries(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ledger_job ON credit_ledger_entries(job_id);
+
+    -- ---- 任务计费 ----
+    -- 状态机：reserved -> settled | refunded | uncertain（外部请求已发出但结果未知，不自动退款）
+    CREATE TABLE IF NOT EXISTS billing_orders (
+      id                    TEXT PRIMARY KEY,
+      user_id               TEXT NOT NULL,
+      job_id                TEXT NOT NULL UNIQUE,
+      status                TEXT NOT NULL,
+      reserved_microcredits INTEGER NOT NULL,
+      settled_microcredits  INTEGER,
+      cost_snapshot_json    TEXT NOT NULL,
+      created_at            TEXT NOT NULL,
+      updated_at            TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_billing_orders_user_created ON billing_orders(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_billing_orders_status ON billing_orders(status, updated_at);
+
+    -- 平台代付：成本与售价分开记录，否则算不出毛利，也发现不了定价倒挂的模型。
+    CREATE TABLE IF NOT EXISTS provider_model_prices (
+      id                 TEXT PRIMARY KEY,
+      provider_id        TEXT NOT NULL,
+      model_id           TEXT NOT NULL,
+      kind               TEXT NOT NULL,
+      pricing_mode       TEXT NOT NULL,
+      price_microcredits INTEGER NOT NULL,
+      cost_microcredits  INTEGER NOT NULL DEFAULT 0,
+      tiers_json         TEXT NOT NULL DEFAULT '{}',
+      active             INTEGER NOT NULL DEFAULT 1,
+      created_at         TEXT NOT NULL,
+      updated_at         TEXT NOT NULL,
+      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_model_prices_key ON provider_model_prices(provider_id, model_id, kind);
+
+    -- ---- 充值订单与支付 ----
+    CREATE TABLE IF NOT EXISTS payment_orders (
+      id                   TEXT PRIMARY KEY,
+      user_id              TEXT NOT NULL,
+      kind                 TEXT NOT NULL,
+      plan_id              TEXT,
+      credits_microcredits INTEGER NOT NULL DEFAULT 0,
+      amount_cents         INTEGER NOT NULL,
+      currency             TEXT NOT NULL DEFAULT 'CNY',
+      status               TEXT NOT NULL,
+      provider             TEXT NOT NULL,
+      provider_config_json TEXT NOT NULL,
+      provider_order_no    TEXT,
+      provider_trade_no    TEXT,
+      paid_at              TEXT,
+      credited_at          TEXT,
+      expires_at           TEXT NOT NULL,
+      created_at           TEXT NOT NULL,
+      updated_at           TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status, expires_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_orders_provider_no ON payment_orders(provider, provider_order_no) WHERE provider_order_no IS NOT NULL;
+
+    -- 回调收件箱：先落库再处理，保证回调不丢；(provider,event_id) 唯一即幂等第一道防线。
+    CREATE TABLE IF NOT EXISTS payment_notifications (
+      id           TEXT PRIMARY KEY,
+      provider     TEXT NOT NULL,
+      event_id     TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status       TEXT NOT NULL,
+      error_json   TEXT,
+      created_at   TEXT NOT NULL,
+      processed_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_notifications_event ON payment_notifications(provider, event_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_notifications_status ON payment_notifications(status, created_at);
+  `);
+
+  // ---- 资源归属 ----
+  // 只给"不属于项目"的实体加 owner_id；assets/outputs 等始终挂在 project_id 下，归属经项目推导，不冗余存储。
+  addColumnIfMissing(database, "projects", "owner_id", "TEXT");
+  addColumnIfMissing(database, "models", "owner_id", "TEXT");
+  addColumnIfMissing(database, "patterns", "owner_id", "TEXT");
+  addColumnIfMissing(database, "pattern_drafts", "owner_id", "TEXT");
+  addColumnIfMissing(database, "user_templates", "owner_id", "TEXT");
+  addColumnIfMissing(database, "user_suites", "owner_id", "TEXT");
+  addColumnIfMissing(database, "jobs", "owner_id", "TEXT");
+  // 流水线的 pattern_id 可空（从来源动作起链时花型尚未生成），无法经花型推导归属，必须自带 owner_id。
+  addColumnIfMissing(database, "pattern_pipelines", "owner_id", "TEXT");
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_projects_owner_updated ON projects(owner_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_jobs_owner_status ON jobs(owner_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_models_owner ON models(owner_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_patterns_owner ON patterns(owner_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pattern_drafts_owner ON pattern_drafts(owner_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_templates_owner ON user_templates(owner_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pattern_pipelines_owner ON pattern_pipelines(owner_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_user_suites_owner ON user_suites(owner_id, updated_at DESC);
+  `);
+
+  // 模特身份维度落成真实列：资产库按身份筛选原先用 json_extract(spec_json,'$.gender') 之类，
+  // 那是 SQLite 专有写法。这几个维度是稳定枚举，做列比查 JSON 更快也更可移植。
+  for (const dimension of ["gender", "age", "heritage", "stature", "build"] as const) {
+    addColumnIfMissing(database, "models", dimension, "TEXT");
+  }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_models_identity ON models(gender, age, heritage, stature, build);
+  `);
+
+  backfillModelIdentity(database);
+
+  // ---- 存储统计 ----
+  // 文件落在 11 处，全部要计入配额；多文件表（layer_exports / print_packs）存总和。
+  addColumnIfMissing(database, "assets", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "outputs", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "exports", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "edit_reference_assets", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "patterns", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "draft_media", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "draft_candidates", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "model_portraits", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "models", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "layer_exports", "size_bytes", "INTEGER");
+  addColumnIfMissing(database, "print_packs", "size_bytes", "INTEGER");
+
+  seedDefaultPlans(database);
+  seedDefaultSettings(database);
+  migrateJsonArraysToRows(database);
+}
+
+/**
+ * 把两个"被查询的 JSON 数组"物化成行表。
+ *
+ * 保留原 JSON 列不动：它是写入时的快照，回滚与排查都要能看原文。
+ * 行表是查询用的投影，写入方在同一次事务里同步维护（见 exportRepository / patternRepository）。
+ */
+function migrateJsonArraysToRows(database: SqliteDatabase): void {
+  database.exec(`
+    -- 分层导出的逐层文件：name/kind/storagePath/hash 来自 layer_files_json 的元素。
+    CREATE TABLE IF NOT EXISTS layer_export_files (
+      id                TEXT PRIMARY KEY,
+      layer_export_id   TEXT NOT NULL,
+      position          INTEGER NOT NULL,
+      name              TEXT NOT NULL,
+      kind              TEXT NOT NULL,
+      storage_path      TEXT NOT NULL,
+      hash              TEXT,
+      created_at        TEXT NOT NULL,
+      FOREIGN KEY (layer_export_id) REFERENCES layer_exports(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_layer_export_files_export ON layer_export_files(layer_export_id, position);
+    CREATE INDEX IF NOT EXISTS idx_layer_export_files_hash ON layer_export_files(hash);
+
+    -- 规格包逐文件：只有 kind='PRINT_FILE' 的条目进资产库，但全部落表以便下载与删除。
+    CREATE TABLE IF NOT EXISTS print_pack_files (
+      id                TEXT PRIMARY KEY,
+      print_pack_id     TEXT NOT NULL,
+      position          INTEGER NOT NULL,
+      name              TEXT NOT NULL,
+      kind              TEXT NOT NULL,
+      storage_path      TEXT NOT NULL,
+      hash              TEXT,
+      created_at        TEXT NOT NULL,
+      FOREIGN KEY (print_pack_id) REFERENCES print_packs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_print_pack_files_pack ON print_pack_files(print_pack_id, position);
+    CREATE INDEX IF NOT EXISTS idx_print_pack_files_hash ON print_pack_files(hash);
+  `);
+
+  // 一次性回填：用设置里的标记守住，避免每次启动都扫两张表。
+  if (database.prepare("SELECT 1 FROM app_settings WHERE key='migration.json_arrays_expanded'").get() !== undefined) return;
+
+  const now = new Date().toISOString();
+  const backfill = database.transaction(() => {
+    expandInto(database, "layer_exports", "layer_files_json", "layer_export_files", "layer_export_id", now);
+    expandInto(database, "print_packs", "files_json", "print_pack_files", "print_pack_id", now);
+    database.prepare("INSERT INTO app_settings (key,value_json,updated_at) VALUES ('migration.json_arrays_expanded','true',?)").run(now);
+  });
+  backfill();
+}
+
+/** 把某张表的 JSON 数组列展开进目标行表；无法解析的行跳过而不是让迁移失败。 */
+function expandInto(
+  database: SqliteDatabase,
+  sourceTable: string,
+  jsonColumn: string,
+  targetTable: string,
+  foreignKey: string,
+  timestamp: string,
+): void {
+  const rows = database.prepare(`SELECT id, ${jsonColumn} AS payload FROM ${sourceTable} WHERE ${jsonColumn} IS NOT NULL`).all() as Array<{ id: string; payload: string }>;
+  const insert = database.prepare(`INSERT INTO ${targetTable} (id,${foreignKey},position,name,kind,storage_path,hash,created_at) VALUES (?,?,?,?,?,?,?,?)`);
+  for (const row of rows) {
+    let entries: unknown;
+    try {
+      entries = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      if (!entry || typeof entry !== "object") return;
+      const record = entry as Record<string, unknown>;
+      const storagePath = typeof record.storagePath === "string" ? record.storagePath : null;
+      if (!storagePath) return;
+      insert.run(
+        `${row.id}-${index}`,
+        row.id,
+        index,
+        typeof record.name === "string" ? record.name : `layer-${index}`,
+        typeof record.kind === "string" ? record.kind : "element",
+        storagePath,
+        typeof record.hash === "string" ? record.hash : null,
+        timestamp,
+      );
+    });
+  }
+}
+
+/** 默认套餐。免费计划必须存在，否则新用户没有可用权益。数值是起步值，后台可改。 */
+/**
+ * 把已有模特的 spec_json 展开进身份列。
+ *
+ * 在应用层解析而不是用 json_extract：迁移代码也不该新增 SQLite 专有写法，
+ * 否则阶段 C 换驱动时这里还得再改一遍。
+ */
+function backfillModelIdentity(database: SqliteDatabase): void {
+  const rows = database.prepare('SELECT id, spec_json FROM models WHERE gender IS NULL').all() as Array<{ id: string; spec_json: string }>;
+  if (rows.length === 0) return;
+  const update = database.prepare('UPDATE models SET gender=?, age=?, heritage=?, stature=?, build=? WHERE id=?');
+  const backfill = database.transaction(() => {
+    for (const row of rows) {
+      let spec: Record<string, unknown>;
+      try {
+        spec = JSON.parse(row.spec_json) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const pick = (key: string): string | null => (typeof spec[key] === 'string' ? (spec[key] as string) : null);
+      update.run(pick('gender'), pick('age'), pick('heritage'), pick('stature'), pick('build'), row.id);
+    }
+  });
+  backfill();
+}
+
+function seedDefaultPlans(database: SqliteDatabase): void {
+  const now = new Date().toISOString();
+  const free = {
+    id: "plan-free",
+    code: "free",
+    name: "免费版",
+    description: "试用全部核心能力，有项目数与并发限制。",
+    priceCents: 0,
+    entitlements: {
+      monthly_credits: 0,
+      max_projects: 3,
+      max_concurrent_jobs: 1,
+      max_image_resolution: "2K",
+      max_storage_bytes: 5_368_709_120,
+      allow_psd_export: false,
+      allow_layer_export: true,
+      allow_web_research: false,
+      allow_suite_forge: false,
+      allow_model_library: true,
+      allow_pattern_studio: true,
+      watermark_exports: false,
+    },
+  };
+  const pro = {
+    id: "plan-pro",
+    code: "pro",
+    name: "专业版",
+    description: "解除项目数与并发限制，开放分层导出与联网研究。",
+    priceCents: 9900,
+    entitlements: {
+      monthly_credits: 50_000_000,
+      max_projects: -1,
+      max_concurrent_jobs: 4,
+      max_image_resolution: "4K",
+      max_storage_bytes: 107_374_182_400,
+      allow_psd_export: true,
+      allow_layer_export: true,
+      allow_web_research: true,
+      allow_suite_forge: true,
+      allow_model_library: true,
+      allow_pattern_studio: true,
+      watermark_exports: false,
+    },
+  };
+  const insertPlan = database.prepare(
+    "INSERT INTO plans (id,code,name,description,price_cents,currency,billing_period,active,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+  );
+  const insertEntitlement = database.prepare("INSERT INTO plan_entitlements (plan_id,key,value_json) VALUES (?,?,?) ON CONFLICT(plan_id, key) DO NOTHING");
+  const seed = database.transaction(() => {
+    for (const [index, plan] of [free, pro].entries()) {
+      insertPlan.run(plan.id, plan.code, plan.name, plan.description, plan.priceCents, "CNY", plan.priceCents > 0 ? "month" : "none", 1, index, now, now);
+      for (const [key, value] of Object.entries(plan.entitlements)) insertEntitlement.run(plan.id, key, JSON.stringify(value));
+    }
+  });
+  seed();
+}
+
+/** 默认站点设置。注册默认关闭：公网开放由管理员显式打开。 */
+function seedDefaultSettings(database: SqliteDatabase): void {
+  const now = new Date().toISOString();
+  const insert = database.prepare("INSERT INTO app_settings (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO NOTHING");
+  const seed = database.transaction(() => {
+    insert.run("registration_enabled", "false", now);
+    insert.run("signup_bonus_microcredits", String(2_000_000), now); // 2 积分试用额度
+    insert.run("site_name", JSON.stringify("EcomGen"), now);
+    // 免费套餐导出时叠加的水印文案；套餐开关 watermarkExports 打开后才会用到。
+    insert.run("export_watermark_text", JSON.stringify("仅供预览"), now);
+  });
+  seed();
 }
 
 /**

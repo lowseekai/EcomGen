@@ -31,6 +31,15 @@ export default defineConfig({
     // 工作台交互用例（大量 userEvent 点击）在并行跑满时单文件耗时会翻倍，
     // 默认 5s 会误报超时；放宽到 15s，仍能兜住真正的挂起。
     testTimeout: 15000,
+    // jsdom + antd 渲染本身很重：34 个文件按默认并发数铺满时会互相拖慢，
+    // 表现为随机某个文件里的交互用例超时（每次挂的还不是同一个）。限并发换确定性。
+    // 注意必须写在 test.poolOptions 里：顶层的 maxWorkers 是 Vitest CLI 选项，
+    // 不在 Vite 的配置类型里，`tsc` 会直接拒绝。
+    poolOptions: {
+      // 只限 forks（Vitest 3 的默认池）。同时给 threads 设上限会和默认 minThreads 冲突，
+      // 报 "options.minThreads and options.maxThreads must not conflict" 并导致 0 个用例被发现。
+      forks: { minForks: 1, maxForks: 2 },
+    },
     // 测试钉死绝对地址：本机 apps/web/.env 若设了相对 base（走代理），
     // 会让 jsdom 的 fetch 收到相对 URL 而崩溃，测试必须与本地环境文件无关
     env: {

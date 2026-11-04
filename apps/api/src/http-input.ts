@@ -6,7 +6,9 @@ import { ApiError } from "./errors.js";
 const schemaReferences = Object.values(API_SCHEMA_REGISTRY);
 
 FormatRegistry.Set("uri", (value) => { try { new URL(value); return true; } catch { return false; } });
-FormatRegistry.Set("uuid", (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+// 版本位接受 1–8：RFC 9562 定义了 v1–v8，本项目主键已改为 v7（时间有序）。
+// 只认 [1-5] 会把 v6/v7/v8 一律判为非法——v7 上线时正是踩在这里。
+FormatRegistry.Set("uuid", (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 FormatRegistry.Set("date-time", (value) => !Number.isNaN(Date.parse(value)));
 
 function pointerToPath(pointer: string, prefix: string): string {

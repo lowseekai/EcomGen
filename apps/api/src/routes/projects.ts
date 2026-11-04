@@ -39,6 +39,7 @@ import {
   UUID_PATTERN,
   assertProjectAssetCapacity,
   assertProjectAssetHashUnique,
+  assertStorageQuota,
   candidatesPerType,
   contentHash,
   ensureProject,
@@ -50,7 +51,11 @@ import {
   verifyCopywritingModel,
   verifyModel,
   writeThumbnail,
+  assertFeature,
+  assertResolutionAllowed,
 } from "../helpers.js";
+import { currentUser } from "../auth-guard.js";
+import { createChargedJob } from "../charged-jobs.js";
 import { parseBody } from "../http-input.js";
 import {
   enumArray,
@@ -160,8 +165,13 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
   });
   app.post("/api/v1/projects", async (request, reply) => {
     const body = parseBody(CreateProjectInput, request.body); const platformTargets = platformTargetsValue(body.platformTargets);
+    // 套餐校验放在模型校验之前：先告诉用户"套餐不含这个"，比先说"模型没配"更有用。
+    if (body.webResearchEnabled === true) assertFeature(repository, currentUser(request), "allowWebResearch");
+    const requestedResolution = body.imageResolution === undefined ? undefined : enumValue<ImageResolution>(body.imageResolution, IMAGE_RESOLUTIONS, "imageResolution");
+    if (requestedResolution) assertResolutionAllowed(repository, currentUser(request), requestedResolution);
     const reasoningProviderId = readText(body.reasoningProviderId, "reasoningProviderId"); const imageProviderId = readText(body.imageProviderId, "imageProviderId");
     verifyModel(repository, reasoningProviderId, readText(body.reasoningModelId, "reasoningModelId"), "reasoning"); verifyModel(repository, imageProviderId, readText(body.imageModelId, "imageModelId"), "image");
+
     return reply.code(201).send(repository.createProject({
       name: readText(body.name, "name"),
       category: readOptionalText(body.category) ?? null,
@@ -200,10 +210,18 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
     if (body.copyLanguage !== undefined) update.copyLanguage = copyLanguageValue(body.copyLanguage);
     if (body.promptLanguage !== undefined) update.promptLanguage = promptLanguageValue(body.promptLanguage);
     if (body.defaultMode !== undefined) update.defaultMode = enumValue<StoryboardMode>(body.defaultMode, ["CREATIVE", "PIXEL_PROTECTED"], "defaultMode");
-    if (body.imageResolution !== undefined) update.imageResolution = enumValue<ImageResolution>(body.imageResolution, IMAGE_RESOLUTIONS, "imageResolution");
+    if (body.imageResolution !== undefined) {
+      const resolution = enumValue<ImageResolution>(body.imageResolution, IMAGE_RESOLUTIONS, "imageResolution");
+      assertResolutionAllowed(repository, currentUser(request), resolution);
+      update.imageResolution = resolution;
+    }
     if (body.imageAspectRatio !== undefined) update.imageAspectRatio = enumValue<ImageAspectRatio>(body.imageAspectRatio, IMAGE_ASPECT_RATIOS, "imageAspectRatio");
     if (body.candidatesPerType !== undefined) update.candidatesPerType = candidatesPerType(body.candidatesPerType);
-    if (body.webResearchEnabled !== undefined) update.webResearchEnabled = readBoolean(body.webResearchEnabled, "webResearchEnabled");
+    if (body.webResearchEnabled !== undefined) {
+      const enabled = readBoolean(body.webResearchEnabled, "webResearchEnabled");
+      if (enabled) assertFeature(repository, currentUser(request), "allowWebResearch");
+      update.webResearchEnabled = enabled;
+    }
     if (body.archived !== undefined) update.archivedAt = readBoolean(body.archived, "archived") ? new Date().toISOString() : null;
     if (body.segmentationModel !== undefined) update.segmentationModel = body.segmentationModel === null ? null : readSegmentationModel(repository, body.segmentationModel);
     applyModelFields(body, update, (providerId, modelId, kind) => verifyModel(repository, providerId, modelId, kind));
@@ -215,7 +233,11 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
     if (!UUID_PATTERN.test(id)) throw new ApiError(400, "VALIDATION_ERROR", "projectId must be a UUID");
     const project = repository.getProject(id);
     if (!project) {
-      // DELETE 保持幂等，并补清上一次数据库已删除但文件清理失败留下的目录。
+      // 注意：`getProject` 是归属过滤后的结果，"查不到"有两种含义——
+      // 项目真的不存在，或者它属于别人。只有前者才允许清理存储目录。
+      // 用系统作用域复核：存在但不属于当前用户时按 404 处理，绝不触碰别人的文件。
+      if (ctx.systemRepository.getProject(id)) missing("project", id);
+      // 真的不存在：DELETE 保持幂等，并补清上一次数据库已删除但文件清理失败留下的目录。
       await storage.deleteProject(id);
       return reply.code(204).send();
     }
@@ -235,10 +257,12 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
     const content = await data.toBuffer(); const hash = contentHash(content);
     assertProjectAssetCapacity(repository, projectId, role);
     assertProjectAssetHashUnique(repository, projectId, hash);
+    // 配额校验放在 putAsset 之前：先落盘再拒绝会留下没人能删的孤儿文件。
+    assertStorageQuota(repository, currentUser(request), content.byteLength);
     const stored = await storage.putAsset(projectId, data.filename, content);
     const dimensions = await imageDimensions(content);
     await writeThumbnail(storage, hash, content);
-    return repository.createAsset({ projectId, role, storagePath: stored.path, hash: stored.hash, originalName: data.filename, mimeType: data.mimetype, width: dimensions.width, height: dimensions.height });
+    return repository.createAsset({ projectId, role, storagePath: stored.path, hash: stored.hash, originalName: data.filename, mimeType: data.mimetype, width: dimensions.width, height: dimensions.height, sizeBytes: content.byteLength });
   });
   // 先删文件再删行：行删了就找不到 storagePath；不级联分镜/输出/任务（契约 deleteAsset）
   app.delete("/api/v1/assets/:assetId", async (request, reply) => { const id = parameter(request, "assetId"); const asset = repository.getAsset(id); if (!asset) missing("asset", id); await storage.delete(asset.storagePath); repository.deleteAsset(id); return reply.code(204).send(); });
@@ -309,7 +333,7 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
     };
     const fingerprint = requestFingerprint({ type: "PLAN", projectId, input, idempotencyKey: request.headers["idempotency-key"] ?? null }); const existing = repository.findJobByFingerprint(projectId, fingerprint); if (existing) return reply.code(existing.status === "SUCCEEDED" ? 200 : 202).send(existing);
     verifyModel(repository, project.reasoningProviderId, project.reasoningModelId, "reasoning");
-    const job = repository.createJob({ id: randomUUID(), projectId, storyboardItemId: null, type: "PLAN", input, requestFingerprint: fingerprint, providerId: project.reasoningProviderId, modelId: project.reasoningModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } });
+    const job = createChargedJob(ctx, request, { id: randomUUID(), projectId, storyboardItemId: null, type: "PLAN", input, requestFingerprint: fingerprint, providerId: project.reasoningProviderId, modelId: project.reasoningModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" } }, { kind: "reasoning", providerId: project.reasoningProviderId, modelId: project.reasoningModelId });
     await enqueueOrMarkFailed(job, "plan"); return reply.code(202).send(job);
   });
   app.get("/api/v1/projects/:projectId/planning-config-snapshots", async (request) => {
@@ -353,10 +377,10 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
     const fingerprint = requestFingerprint({ type: "COPYWRITE", projectId, input, idempotencyKey: request.headers["idempotency-key"] ?? null });
     const existing = repository.findJobByFingerprint(projectId, fingerprint);
     if (existing) return reply.code(existing.status === "SUCCEEDED" ? 200 : 202).send(existing);
-    const job = repository.createJob({
+    const job = createChargedJob(ctx, request, {
       id: randomUUID(), projectId, storyboardItemId: null, type: "COPYWRITE", input, requestFingerprint: fingerprint,
       providerId: project.reasoningProviderId, modelId: project.reasoningModelId, estimatedCost: { status: "UNKNOWN", unit: "provider-defined" },
-    });
+    }, { kind: "reasoning", providerId: project.reasoningProviderId, modelId: project.reasoningModelId });
     await enqueueOrMarkFailed(job, "copywrite");
     return reply.code(202).send(job);
   });

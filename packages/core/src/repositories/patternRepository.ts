@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
 import type { ListingCopy, ListingPlatform, PatternSource, TileableStatus } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
+import { SYSTEM_SCOPE, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 /** 全局花型库条目；来源血缘（提取源图 hash / 起稿任务 / 父花型）是自检与追溯的留痕基础。 */
@@ -61,20 +62,26 @@ export interface PatternListingResultRecord {
 }
 
 export class PatternRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
-  public listPatterns(): PatternRecord[] { return (this.db.prepare("SELECT * FROM patterns ORDER BY created_at DESC, id DESC").all() as Row[]).map(mapPattern); }
+  public listPatterns(): PatternRecord[] {
+    const owner = ownerClause(this.scope);
+    return (this.db.prepare(`SELECT * FROM patterns WHERE 1=1${owner.sql} ORDER BY created_at DESC, id DESC`).all(...owner.params) as Row[]).map(mapPattern);
+  }
   /** 指纹复用判定用：某次提取/起稿任务当前还挂着的花型（用户删除后为空）。 */
   public listPatternsByJobId(jobId: string): PatternRecord[] {
-    return (this.db.prepare("SELECT * FROM patterns WHERE source_job_id=? ORDER BY created_at DESC, id DESC").all(jobId) as Row[]).map(mapPattern);
+    const owner = ownerClause(this.scope);
+    return (this.db.prepare(`SELECT * FROM patterns WHERE source_job_id=?${owner.sql} ORDER BY created_at DESC, id DESC`).all(jobId, ...owner.params) as Row[]).map(mapPattern);
   }
   /** 同一判定但只需布尔答案（API 的指纹复用）时用这条：EXISTS 一行即返回，不把候选行整表 map 出来。 */
   public hasPatternArtifactsByJobId(jobId: string): boolean {
-    const row = this.db.prepare("SELECT 1 FROM patterns WHERE source_job_id=? AND storage_path IS NOT NULL AND file_hash IS NOT NULL LIMIT 1").get(jobId);
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT 1 FROM patterns WHERE source_job_id=? AND storage_path IS NOT NULL AND file_hash IS NOT NULL${owner.sql} LIMIT 1`).get(jobId, ...owner.params);
     return row !== undefined;
   }
   public getPattern(id: string): PatternRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM patterns WHERE id=?").get(id);
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT * FROM patterns WHERE id=?${owner.sql}`).get(id, ...owner.params);
     return row ? mapPattern(row as Row) : undefined;
   }
   /** Worker 落一条花型；同 (sourceJobId, fileHash) 或同来源候选幂等返回既有行，重试/重复定稿不产生重复花型。 */
@@ -86,15 +93,16 @@ export class PatternRepository {
         : undefined;
     if (existing) return mapPattern(existing);
     // 新花型一律从 NONE 起步：可平铺是"已验过"的事实，不能在入库时就假定成立。
-    const record: PatternRecord = { tileable: "NONE", tileableScore: null, tileableCheckedWith: null, sourceDraftCandidateId: null, ...input, id: input.id ?? randomUUID(), createdAt: now(), updatedAt: now() };
-    this.db.prepare(`INSERT INTO patterns (id,name,source_type,source_job_id,source_asset_hash,parent_pattern_id,storage_path,file_hash,width,height,tags_json,tileable_status,tileable_score,tileable_checked_with,source_draft_candidate_id,created_at,updated_at)
-      VALUES (@id,@name,@sourceType,@sourceJobId,@sourceAssetHash,@parentPatternId,@storagePath,@fileHash,@width,@height,@tags,@tileable,@tileableScore,@tileableCheckedWith,@sourceDraftCandidateId,@createdAt,@updatedAt)`)
-      .run({ ...record, tags: json(record.tags) });
+    const record: PatternRecord = { tileable: "NONE", tileableScore: null, tileableCheckedWith: null, sourceDraftCandidateId: null, ...input, id: input.id ?? newId(), createdAt: now(), updatedAt: now() };
+    this.db.prepare(`INSERT INTO patterns (id,owner_id,name,source_type,source_job_id,source_asset_hash,parent_pattern_id,storage_path,file_hash,width,height,tags_json,tileable_status,tileable_score,tileable_checked_with,source_draft_candidate_id,created_at,updated_at)
+      VALUES (@id,@ownerId,@name,@sourceType,@sourceJobId,@sourceAssetHash,@parentPatternId,@storagePath,@fileHash,@width,@height,@tags,@tileable,@tileableScore,@tileableCheckedWith,@sourceDraftCandidateId,@createdAt,@updatedAt)`)
+      .run({ ...record, ownerId: ownerValue(this.scope), tags: json(record.tags) });
     return record;
   }
   /** 定稿幂等读取：某创作候选已经入库的正式花型（删掉花型后为空，允许重新定稿）。 */
   public getPatternByDraftCandidateId(candidateId: string): PatternRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM patterns WHERE source_draft_candidate_id=? LIMIT 1").get(candidateId);
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT * FROM patterns WHERE source_draft_candidate_id=?${owner.sql} LIMIT 1`).get(candidateId, ...owner.params);
     return row ? mapPattern(row as Row) : undefined;
   }
   public updatePattern(id: string, patch: Partial<Pick<PatternRecord, "name" | "tags">>): PatternRecord | undefined {
@@ -106,7 +114,8 @@ export class PatternRepository {
     return record;
   }
   public deletePattern(id: string): boolean {
-    return this.db.prepare("DELETE FROM patterns WHERE id=?").run(id).changes > 0;
+    const owner = ownerClause(this.scope);
+    return this.db.prepare(`DELETE FROM patterns WHERE id=?${owner.sql}`).run(id, ...owner.params).changes > 0;
   }
 
   /** Worker 回填花型产物：文件落盘后一次性写入主图路径、hash 与尺寸；此前该行在资产库不可见。 */
@@ -132,30 +141,49 @@ export class PatternRepository {
     return { ...current, tileable: verdict.status, tileableScore: verdict.score, tileableCheckedWith: verdict.algorithmVersion, updatedAt };
   }
 
+  /** 与 syncLayerFiles 同构：行表供查询，JSON 保留原文。 */
+  private syncPrintPackFiles(printPackId: string, files: PrintPackFileRecord[] | null): void {
+    this.db.prepare("DELETE FROM print_pack_files WHERE print_pack_id=?").run(printPackId);
+    if (!files || files.length === 0) return;
+    const insert = this.db.prepare("INSERT INTO print_pack_files (id,print_pack_id,position,name,kind,storage_path,hash,created_at) VALUES (?,?,?,?,?,?,?,?)");
+    const timestamp = now();
+    files.forEach((file, index) => {
+      insert.run(`${printPackId}-${index}`, printPackId, index, file.name, file.kind, file.storagePath, file.hash ?? null, timestamp);
+    });
+  }
+
   public createPrintPack(input: Omit<PrintPackRecord, "id" | "createdAt" | "updatedAt" | "status" | "files" | "manifest" | "error"> & Partial<Pick<PrintPackRecord, "status">>): PrintPackRecord {
-    const record: PrintPackRecord = { ...input, status: input.status ?? "QUEUED", files: null, manifest: null, error: null, id: randomUUID(), createdAt: now(), updatedAt: now() };
+    const record: PrintPackRecord = { ...input, status: input.status ?? "QUEUED", files: null, manifest: null, error: null, id: newId(), createdAt: now(), updatedAt: now() };
     this.db.prepare(`INSERT INTO print_packs (id,pattern_id,job_id,spec_id,spec_version,status,files_json,manifest_json,error_json,created_at,updated_at)
       VALUES (@id,@patternId,@jobId,@specId,@specVersion,@status,@files,@manifest,@error,@createdAt,@updatedAt)`)
       .run({ ...record, files: record.files ? json(record.files) : null, manifest: record.manifest ? json(record.manifest) : null, error: record.error ? json(record.error) : null });
     return record;
   }
   public getPrintPack(id: string): PrintPackRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM print_packs WHERE id=?").get(id);
+    const owner = ownerClause(this.scope, "pt.owner_id");
+    const row = this.db.prepare(`SELECT pp.* FROM print_packs pp JOIN patterns pt ON pt.id=pp.pattern_id WHERE pp.id=?${owner.sql}`).get(id, ...owner.params);
     return row ? mapPrintPack(row as Row) : undefined;
   }
   public getPrintPackByJobId(jobId: string): PrintPackRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM print_packs WHERE job_id=?").get(jobId);
+    const owner = ownerClause(this.scope, "pt.owner_id");
+    const row = this.db.prepare(`SELECT pp.* FROM print_packs pp JOIN patterns pt ON pt.id=pp.pattern_id WHERE pp.job_id=?${owner.sql}`).get(jobId, ...owner.params);
     return row ? mapPrintPack(row as Row) : undefined;
   }
   public listPrintPacks(patternId: string): PrintPackRecord[] {
-    return (this.db.prepare("SELECT * FROM print_packs WHERE pattern_id=? ORDER BY created_at DESC, id DESC").all(patternId) as Row[]).map(mapPrintPack);
+    const owner = ownerClause(this.scope, "pt.owner_id");
+    return (this.db.prepare(`SELECT pp.* FROM print_packs pp JOIN patterns pt ON pt.id=pp.pattern_id WHERE pp.pattern_id=?${owner.sql} ORDER BY pp.created_at DESC, pp.id DESC`)
+      .all(patternId, ...owner.params) as Row[]).map(mapPrintPack);
   }
   public updatePrintPack(id: string, patch: Partial<Pick<PrintPackRecord, "status" | "files" | "manifest" | "error">>): PrintPackRecord | undefined {
     const current = this.getPrintPack(id);
     if (!current) return undefined;
     const record: PrintPackRecord = { ...current, ...patch, updatedAt: now() };
-    this.db.prepare("UPDATE print_packs SET status=@status,files_json=@files,manifest_json=@manifest,error_json=@error,updated_at=@updatedAt WHERE id=@id")
-      .run({ id: record.id, status: record.status, files: record.files ? json(record.files) : null, manifest: record.manifest ? json(record.manifest) : null, error: record.error ? json(record.error) : null, updatedAt: record.updatedAt });
+    const write = this.db.transaction(() => {
+      this.db.prepare("UPDATE print_packs SET status=@status,files_json=@files,manifest_json=@manifest,error_json=@error,updated_at=@updatedAt WHERE id=@id")
+        .run({ id: record.id, status: record.status, files: record.files ? json(record.files) : null, manifest: record.manifest ? json(record.manifest) : null, error: record.error ? json(record.error) : null, updatedAt: record.updatedAt });
+      if (patch.files !== undefined) this.syncPrintPackFiles(record.id, record.files);
+    });
+    write();
     return record;
   }
   public deletePrintPack(id: string): boolean {
@@ -164,7 +192,7 @@ export class PatternRepository {
 
   public savePatternListingResult(input: Omit<PatternListingResultRecord, "createdAt">): PatternListingResultRecord {
     const record: PatternListingResultRecord = { ...input, createdAt: now() };
-    this.db.prepare("INSERT OR REPLACE INTO pattern_listing_results (job_id,pattern_id,platform,content_json,created_at) VALUES (@jobId,@patternId,@platform,@copy,@createdAt)")
+    this.db.prepare("INSERT INTO pattern_listing_results (job_id,pattern_id,platform,content_json,created_at) VALUES (@jobId,@patternId,@platform,@copy,@createdAt) ON CONFLICT(job_id) DO UPDATE SET pattern_id=excluded.pattern_id, platform=excluded.platform, content_json=excluded.content_json, created_at=excluded.created_at")
       .run({ ...record, copy: json(record.copy) });
     return record;
   }

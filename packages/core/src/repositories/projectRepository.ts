@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ImageAspectRatio,
   ImageResolution,
@@ -9,7 +8,9 @@ import type {
   TargetMarket,
 } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
 import { normalize } from "../fingerprint.js";
+import { SYSTEM_SCOPE, ownerClause, ownerValue, type ScopeInput } from "../scope.js";
 import { type Row, json, now, parse } from "./internal.js";
 
 export interface ProjectRecord {
@@ -125,11 +126,13 @@ function emptyCover(): ProjectCoverSummary {
 }
 
 export class ProjectRepository {
-  public constructor(private readonly db: SqliteDatabase) { }
+  public constructor(private readonly db: SqliteDatabase, private readonly scope: ScopeInput = SYSTEM_SCOPE) { }
 
   public listProjects(archived = false): ProjectRecord[] {
     const order = archived ? "archived_at DESC, updated_at DESC" : "updated_at DESC";
-    return (this.db.prepare(`SELECT * FROM projects WHERE archived_at IS ${archived ? "NOT " : ""}NULL ORDER BY ${order}`).all() as Row[]).map(mapProject);
+    const owner = ownerClause(this.scope);
+    return (this.db.prepare(`SELECT * FROM projects WHERE archived_at IS ${archived ? "NOT " : ""}NULL${owner.sql} ORDER BY ${order}`)
+      .all(...owner.params) as Row[]).map(mapProject);
   }
   /** 封面是项目列表的投影：直接读 assets/outputs 两张子表拼装，抽到资产仓库反而制造一次往返。 */
   public listProjectCovers(projectIds: string[]): Map<string, ProjectCoverSummary> {
@@ -166,19 +169,23 @@ export class ProjectRepository {
     }
     return covers;
   }
-  public getProject(id: string): ProjectRecord | undefined { const row = this.db.prepare("SELECT * FROM projects WHERE id = ?").get(id); return row ? mapProject(row as Row) : undefined; }
+  public getProject(id: string): ProjectRecord | undefined {
+    const owner = ownerClause(this.scope);
+    const row = this.db.prepare(`SELECT * FROM projects WHERE id = ?${owner.sql}`).get(id, ...owner.params);
+    return row ? mapProject(row as Row) : undefined;
+  }
   public createProject(input: Omit<ProjectRecord, "id" | "createdAt" | "updatedAt" | "webResearchEnabled" | "archivedAt" | "planningRevision" | "segmentationModel" | "promptLanguage"> & Partial<Pick<ProjectRecord, "webResearchEnabled" | "archivedAt" | "promptLanguage">> & { segmentationModel?: { providerId: string; modelId: string; protocol?: NonNullable<SegmentationModelRef["protocol"]> } | null }): ProjectRecord {
-    const record: ProjectRecord = { ...input, promptLanguage: input.promptLanguage ?? "CHINESE", webResearchEnabled: input.webResearchEnabled ?? false, archivedAt: input.archivedAt ?? null, planningRevision: 0, segmentationModel: input.segmentationModel ? { ...input.segmentationModel, protocol: input.segmentationModel.protocol ?? "fal" } : null, id: randomUUID(), createdAt: now(), updatedAt: now() };
-    this.db.prepare(`INSERT INTO projects (id,name,category,product_description,verified_facts_json,prohibited_claims_json,brand_guidelines_json,platform_targets_json,target_market,copy_language,prompt_language,reasoning_provider_id,reasoning_model_id,image_provider_id,image_model_id,segmentation_provider_id,segmentation_model_id,segmentation_protocol,default_mode,image_resolution,image_aspect_ratio,candidates_per_type,web_research_enabled,archived_at,planning_revision,created_at,updated_at)
-      VALUES (@id,@name,@category,@productDescription,@verifiedFacts,@prohibitedClaims,@brandGuidelines,@platformTargets,@targetMarket,@copyLanguage,@promptLanguage,@reasoningProviderId,@reasoningModelId,@imageProviderId,@imageModelId,@segmentationProviderId,@segmentationModelId,@segmentationProtocol,@defaultMode,@imageResolution,@imageAspectRatio,@candidatesPerType,@webResearchEnabled,@archivedAt,@planningRevision,@createdAt,@updatedAt)`)
-      .run({ ...record, webResearchEnabled: record.webResearchEnabled ? 1 : 0, platformTargets: json(record.platformTargets), verifiedFacts: json(record.verifiedFacts), prohibitedClaims: json(record.prohibitedClaims), brandGuidelines: json(record.brandGuidelines), segmentationProviderId: record.segmentationModel?.providerId ?? null, segmentationModelId: record.segmentationModel?.modelId ?? null, segmentationProtocol: record.segmentationModel?.protocol ?? null });
+    const record: ProjectRecord = { ...input, promptLanguage: input.promptLanguage ?? "CHINESE", webResearchEnabled: input.webResearchEnabled ?? false, archivedAt: input.archivedAt ?? null, planningRevision: 0, segmentationModel: input.segmentationModel ? { ...input.segmentationModel, protocol: input.segmentationModel.protocol ?? "fal" } : null, id: newId(), createdAt: now(), updatedAt: now() };
+    this.db.prepare(`INSERT INTO projects (id,owner_id,name,category,product_description,verified_facts_json,prohibited_claims_json,brand_guidelines_json,platform_targets_json,target_market,copy_language,prompt_language,reasoning_provider_id,reasoning_model_id,image_provider_id,image_model_id,segmentation_provider_id,segmentation_model_id,segmentation_protocol,default_mode,image_resolution,image_aspect_ratio,candidates_per_type,web_research_enabled,archived_at,planning_revision,created_at,updated_at)
+      VALUES (@id,@ownerId,@name,@category,@productDescription,@verifiedFacts,@prohibitedClaims,@brandGuidelines,@platformTargets,@targetMarket,@copyLanguage,@promptLanguage,@reasoningProviderId,@reasoningModelId,@imageProviderId,@imageModelId,@segmentationProviderId,@segmentationModelId,@segmentationProtocol,@defaultMode,@imageResolution,@imageAspectRatio,@candidatesPerType,@webResearchEnabled,@archivedAt,@planningRevision,@createdAt,@updatedAt)`)
+      .run({ ...record, ownerId: ownerValue(this.scope), webResearchEnabled: record.webResearchEnabled ? 1 : 0, platformTargets: json(record.platformTargets), verifiedFacts: json(record.verifiedFacts), prohibitedClaims: json(record.prohibitedClaims), brandGuidelines: json(record.brandGuidelines), segmentationProviderId: record.segmentationModel?.providerId ?? null, segmentationModelId: record.segmentationModel?.modelId ?? null, segmentationProtocol: record.segmentationModel?.protocol ?? null });
     return record;
   }
   public updateProject(id: string, patch: Partial<Omit<ProjectRecord, "id" | "createdAt">>): ProjectRecord | undefined {
     const current = this.getProject(id); if (!current) return undefined;
     const next = { ...current, ...patch, planningRevision: nextPlanningRevision(current, patch), updatedAt: now() };
-    this.db.prepare(`UPDATE projects SET name=@name,category=@category,product_description=@productDescription,verified_facts_json=@verifiedFacts,prohibited_claims_json=@prohibitedClaims,brand_guidelines_json=@brandGuidelines,platform_targets_json=@platformTargets,target_market=@targetMarket,copy_language=@copyLanguage,prompt_language=@promptLanguage,reasoning_provider_id=@reasoningProviderId,reasoning_model_id=@reasoningModelId,image_provider_id=@imageProviderId,image_model_id=@imageModelId,segmentation_provider_id=@segmentationProviderId,segmentation_model_id=@segmentationModelId,segmentation_protocol=@segmentationProtocol,default_mode=@defaultMode,image_resolution=@imageResolution,image_aspect_ratio=@imageAspectRatio,candidates_per_type=@candidatesPerType,web_research_enabled=@webResearchEnabled,archived_at=@archivedAt,planning_revision=@planningRevision,updated_at=@updatedAt WHERE id=@id`)
-      .run({ ...next, webResearchEnabled: next.webResearchEnabled ? 1 : 0, platformTargets: json(next.platformTargets), verifiedFacts: json(next.verifiedFacts), prohibitedClaims: json(next.prohibitedClaims), brandGuidelines: json(next.brandGuidelines), segmentationProviderId: next.segmentationModel?.providerId ?? null, segmentationModelId: next.segmentationModel?.modelId ?? null, segmentationProtocol: next.segmentationModel?.protocol ?? null });
+    this.db.prepare(`UPDATE projects SET name=@name,category=@category,product_description=@productDescription,verified_facts_json=@verifiedFacts,prohibited_claims_json=@prohibitedClaims,brand_guidelines_json=@brandGuidelines,platform_targets_json=@platformTargets,target_market=@targetMarket,copy_language=@copyLanguage,prompt_language=@promptLanguage,reasoning_provider_id=@reasoningProviderId,reasoning_model_id=@reasoningModelId,image_provider_id=@imageProviderId,image_model_id=@imageModelId,segmentation_provider_id=@segmentationProviderId,segmentation_model_id=@segmentationModelId,segmentation_protocol=@segmentationProtocol,default_mode=@defaultMode,image_resolution=@imageResolution,image_aspect_ratio=@imageAspectRatio,candidates_per_type=@candidatesPerType,web_research_enabled=@webResearchEnabled,archived_at=@archivedAt,planning_revision=@planningRevision,updated_at=@updatedAt WHERE id=@id AND (@ownerId IS NULL OR owner_id=@ownerId)`)
+      .run({ ...next, ownerId: ownerValue(this.scope), webResearchEnabled: next.webResearchEnabled ? 1 : 0, platformTargets: json(next.platformTargets), verifiedFacts: json(next.verifiedFacts), prohibitedClaims: json(next.prohibitedClaims), brandGuidelines: json(next.brandGuidelines), segmentationProviderId: next.segmentationModel?.providerId ?? null, segmentationModelId: next.segmentationModel?.modelId ?? null, segmentationProtocol: next.segmentationModel?.protocol ?? null });
     return next;
   }
 
@@ -186,26 +193,30 @@ export class ProjectRepository {
     const current = this.getProject(id);
     if (!current) return "missing";
     if (!current.archivedAt) return "not_archived";
-    const result = this.db.prepare("DELETE FROM projects WHERE id=? AND archived_at IS NOT NULL").run(id);
+    const owner = ownerClause(this.scope);
+    const result = this.db.prepare(`DELETE FROM projects WHERE id=? AND archived_at IS NOT NULL${owner.sql}`).run(id, ...owner.params);
     return result.changes > 0 ? "deleted" : "not_archived";
   }
 
   public createPlanningConfigSnapshot(input: Omit<PlanningConfigSnapshotRecord, "id" | "createdAt">): PlanningConfigSnapshotRecord {
     const existing = this.db.prepare("SELECT * FROM planning_config_snapshots WHERE source_job_id=?").get(input.sourceJobId) as Row | undefined;
     if (existing) return mapPlanningConfigSnapshot(existing);
-    const record: PlanningConfigSnapshotRecord = { ...input, id: randomUUID(), createdAt: now() };
+    const record: PlanningConfigSnapshotRecord = { ...input, id: newId(), createdAt: now() };
     const write = this.db.transaction(() => {
       this.db.prepare("INSERT INTO planning_config_snapshots (id,project_id,source_job_id,payload_json,created_at) VALUES (@id,@projectId,@sourceJobId,@payload,@createdAt)").run({ ...record, payload: json(record.payload) });
-      this.db.prepare("DELETE FROM planning_config_snapshots WHERE project_id=? AND id NOT IN (SELECT id FROM planning_config_snapshots WHERE project_id=? ORDER BY created_at DESC, rowid DESC LIMIT 20)").run(record.projectId, record.projectId);
+      this.db.prepare("DELETE FROM planning_config_snapshots WHERE project_id=? AND id NOT IN (SELECT id FROM planning_config_snapshots WHERE project_id=? ORDER BY created_at DESC, id DESC LIMIT 20)").run(record.projectId, record.projectId);
     });
     write();
     return record;
   }
   public listPlanningConfigSnapshots(projectId: string): PlanningConfigSnapshotRecord[] {
-    return (this.db.prepare("SELECT * FROM planning_config_snapshots WHERE project_id=? ORDER BY created_at DESC, rowid DESC LIMIT 20").all(projectId) as Row[]).map(mapPlanningConfigSnapshot);
+    const owner = ownerClause(this.scope, "p.owner_id");
+    return (this.db.prepare(`SELECT s.* FROM planning_config_snapshots s JOIN projects p ON p.id=s.project_id WHERE s.project_id=?${owner.sql} ORDER BY s.created_at DESC, s.id DESC LIMIT 20`)
+      .all(projectId, ...owner.params) as Row[]).map(mapPlanningConfigSnapshot);
   }
   public getPlanningConfigSnapshot(id: string): PlanningConfigSnapshotRecord | undefined {
-    const row = this.db.prepare("SELECT * FROM planning_config_snapshots WHERE id=?").get(id);
+    const owner = ownerClause(this.scope, "p.owner_id");
+    const row = this.db.prepare(`SELECT s.* FROM planning_config_snapshots s JOIN projects p ON p.id=s.project_id WHERE s.id=?${owner.sql}`).get(id, ...owner.params);
     return row ? mapPlanningConfigSnapshot(row as Row) : undefined;
   }
 }

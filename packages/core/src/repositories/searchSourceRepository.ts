@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { SearchSourceKind } from "@ecomgen/contracts";
 import type { SqliteDatabase } from "../database.js";
+import { newId } from "../ids.js";
 import { type Row, now } from "./internal.js";
 
 export interface SearchSourceRecord {
@@ -27,7 +27,7 @@ export class SearchSourceRepository {
   }
   public saveSearchSource(input: Omit<SearchSourceRecord, "id" | "createdAt" | "updatedAt"> & { id?: string }): SearchSourceRecord {
     const existing = input.id ? this.getSearchSource(input.id) : undefined;
-    const record: SearchSourceRecord = { ...input, id: input.id ?? randomUUID(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    const record: SearchSourceRecord = { ...input, id: input.id ?? newId(), createdAt: existing?.createdAt ?? now(), updatedAt: now() };
     this.db.prepare(`INSERT INTO search_sources (id,name,kind,base_url,encrypted_api_key,priority,enabled,created_at,updated_at)
       VALUES (@id,@name,@kind,@baseUrl,@encryptedApiKey,@priority,@enabled,@createdAt,@updatedAt)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,base_url=excluded.base_url,encrypted_api_key=excluded.encrypted_api_key,priority=excluded.priority,enabled=excluded.enabled,updated_at=excluded.updated_at`)
