@@ -42,6 +42,10 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    # 镜像自带的探针打的是 API 的 /health；备份容器不起 HTTP 服务，
+    # 继承它必然永远 unhealthy。备份是否正常看日志里的 "backup written"。
+    healthcheck:
+      disable: true
     entrypoint: ["sh", "-c"]
     command:
       - |
