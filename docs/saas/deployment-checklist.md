@@ -30,6 +30,16 @@
 | `ECOMGEN_TRUST_PROXY` | 受信代理跳数或地址列表 | 空（不信任任何代理） |
 | `ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS` | 允许 Provider 返回内网图片 URL | `false` |
 
+### `ECOMGEN_PRODUCTION=true`：把清单变成启动时的硬约束
+
+设置这个变量后，应用会在启动时自检，**配错就直接拒绝启动**，而不是带着弱配置跑起来：
+
+- `ECOMGEN_SECURE_COOKIES` 不是 `true` → 拒绝启动
+- `ECOMGEN_MASTER_KEY` 仍是 `.env.example` 里的占位值 → 拒绝启动
+- `ECOMGEN_TRUST_PROXY` 未设置 → 打印告警（直连部署本来就不该设，所以不阻断）
+
+本地开发不要设它。
+
 ### `ECOMGEN_TRUST_PROXY`：放在反代后面必须设置
 
 **不设置它的后果**：`request.ip` 恒为反向代理的地址，所有用户共享同一个限流桶。
@@ -96,10 +106,32 @@ server {
 
 ```
 /app/data/ecomgen.sqlite        # 主库（WAL 模式，还有 -wal / -shm 两个伴随文件）
+/app/data/backups/              # 定时备份快照（自动生成）
 /app/data/assets/               # 上传素材
 /app/data/outputs/              # 生成结果
 /app/data/exports/ layers/ patterns/ print-packs/ thumbs/ ...
 ```
+
+### 定时备份已经内置
+
+`docker-compose.yml` 里有一个 `backup` 服务，用镜像内的 `backup-cli`（SQLite 在线备份 API）
+按固定间隔生成一致性快照，并按份数保留：
+
+| 变量 | 作用 | 默认 |
+| --- | --- | --- |
+| `ECOMGEN_BACKUP_INTERVAL_SECONDS` | 备份间隔 | `21600`（6 小时） |
+| `ECOMGEN_BACKUP_KEEP` | 保留份数 | `7` |
+
+实测输出（`docker compose logs backup`）：
+
+```
+backup written: /app/data/backups/ecomgen-2026-11-07T08-15-33-977Z.sqlite (0.76 MB)
+retained 1 snapshot(s), removed 0
+```
+
+> **只备份了数据库，没有备份素材目录**。`assets/ outputs/ layers/ exports/ patterns/`
+> 需要单独搬运（`docker compose cp`），否则恢复后会出现"记录都在、图全打不开"。
+> 完整的"库 + 素材"一起恢复演练建议在预发做一次。
 
 **备份不能只拷 `.sqlite`**：WAL 模式下未 checkpoint 的事务在 `-wal` 里，只拷主文件会丢最近的数据。实测过：主库文件 4 KB，而一致性备份出来 733 KB —— 差的全部在 WAL 里。
 

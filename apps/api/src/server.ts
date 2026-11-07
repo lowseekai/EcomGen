@@ -1,7 +1,10 @@
 import { resolve } from "node:path";
 import { resolveDataDir } from "@ecomgen/core";
 import { buildApi } from "./app.js";
+import { assertProductionConfig } from "./production-guard.js";
 import { corsOriginsFromEnv } from "./cors.js";
+
+assertProductionConfig(process.env);
 
 const masterKey = process.env.ECOMGEN_MASTER_KEY;
 if (!masterKey) throw new Error("ECOMGEN_MASTER_KEY must be a base64-encoded 32-byte key");

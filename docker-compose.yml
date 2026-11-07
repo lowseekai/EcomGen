@@ -35,6 +35,27 @@ services:
     volumes:
       - ecomgen_data:/app/data
 
+  # 定时备份。备份不是"记得做"的事——没有自动化就等于没有备份。
+  # 用同一个镜像里的 backup-cli（SQLite 在线备份 API，不用停服务）。
+  backup:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - api
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          node apps/api/dist/backup-cli.js || echo "backup failed at $(date -Iseconds)"
+          sleep $${ECOMGEN_BACKUP_INTERVAL_SECONDS:-21600}
+        done
+    environment:
+      ECOMGEN_DATA_DIR: /app/data
+      ECOMGEN_BACKUP_KEEP: ${ECOMGEN_BACKUP_KEEP:-7}
+      ECOMGEN_BACKUP_INTERVAL_SECONDS: ${ECOMGEN_BACKUP_INTERVAL_SECONDS:-21600}
+    volumes:
+      - ecomgen_data:/app/data
+
   worker:
     build: .
     restart: unless-stopped
