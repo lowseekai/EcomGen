@@ -291,3 +291,55 @@ describe("生图响应格式识别与 Seedream 域参数", () => {
     expect(sniffImageMimeType(Buffer.alloc(0))).toBeNull();
   });
 });
+
+describe("Provider 返回的图片 URL 必须过 SSRF 校验", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("指向云元数据地址的 URL 被拒绝，且不会发出第二次请求", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: [{ url: "http://169.254.169.254/latest/meta-data/iam/security-credentials/" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new OpenAiCompatibleImageProvider({ baseUrl: "https://example.test/v1", apiKey: "secret" });
+    await expect(provider.generate({ model: "image-model", prompt: "cup" })).rejects.toThrow(/not allowed|private|loopback|link-local/i);
+    // 只有第一次（调 Provider）发生过；危险的下载请求根本没发出。
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("内网地址同样被拒绝", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: [{ url: "http://10.0.0.5/internal.png" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new OpenAiCompatibleImageProvider({ baseUrl: "https://example.test/v1", apiKey: "secret" });
+    await expect(provider.generate({ model: "image-model", prompt: "cup" })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("公网 URL 正常下载", async () => {
+    const fetchMock = vi.fn(async (input: URL | string) => {
+      const url = String(input);
+      if (url.includes("images/generations")) {
+        return new Response(JSON.stringify({ data: [{ url: "https://cdn.example.com/out.png" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(Buffer.from([0x89, 0x50, 0x4e, 0x47]), { status: 200, headers: { "content-type": "image/png" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new OpenAiCompatibleImageProvider({ baseUrl: "https://example.test/v1", apiKey: "secret" });
+    const result = await provider.generate({ model: "image-model", prompt: "cup" });
+    expect(result.image.length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

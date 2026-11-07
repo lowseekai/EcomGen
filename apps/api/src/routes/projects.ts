@@ -53,6 +53,7 @@ import {
   writeThumbnail,
   assertFeature,
   assertResolutionAllowed,
+  assertImageUpload,
 } from "../helpers.js";
 import { currentUser } from "../auth-guard.js";
 import { createChargedJob } from "../charged-jobs.js";
@@ -251,7 +252,7 @@ export function registerProjectRoutes(app: FastifyInstance, ctx: ApiContext): vo
   });
   app.post("/api/v1/projects/:projectId/assets", async (request) => {
     const projectId = parameter(request, "projectId"); ensureProject(repository, projectId); const data = await request.file(); if (!data) throw new ApiError(400, "VALIDATION_ERROR", "A file is required");
-    if (!data.mimetype.startsWith("image/")) throw new ApiError(400, "VALIDATION_ERROR", "Only image files are supported");
+    assertImageUpload(data.mimetype, data.filename ?? "");
     const fields = data.fields as Record<string, { value?: unknown }>;
     const role = parseAssetRole(fields.kind?.value ?? fields.role?.value);
     const content = await data.toBuffer(); const hash = contentHash(content);

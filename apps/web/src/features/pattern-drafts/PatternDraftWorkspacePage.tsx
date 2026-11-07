@@ -786,7 +786,7 @@ export function PatternDraftWorkspacePage() {
             const result = await finalize.mutateAsync({ candidateId: selected.id, body: { name, clientKey: randomUuid() } });
             message.success(result.reused ? "该候选已入库，已打开既有花型" : "已定稿入库");
             setFinalizeOpen(false);
-            navigate(`/patterns/${result.pattern.id}`);
+            void navigate(`/patterns/${result.pattern.id}`);
           } catch (error) {
             message.error(errorText(error));
           }

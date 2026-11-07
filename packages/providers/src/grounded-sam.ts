@@ -1,4 +1,5 @@
 import { requestSignal } from "./abort.js";
+import { assertSafeRemoteUrl } from "./remote-url.js";
 import { ProviderConnection, ProviderError } from "./openai-compatible.js";
 import type { FalSegmentationResult } from "./fal.js";
 
@@ -84,7 +85,7 @@ async function resolveImageData(imageUrl: string, cancel?: AbortSignal): Promise
     const mimeType = /data:([^;]+)/.exec(imageUrl.slice(0, comma))?.[1] ?? "image/png";
     return { data: imageUrl.slice(comma + 1), mime_type: mimeType };
   }
-  const response = await fetch(imageUrl, { signal: requestSignal(cancel, SEGMENTATION_REQUEST_TIMEOUT_MS) });
+  const response = await fetch(assertSafeRemoteUrl(imageUrl), { signal: requestSignal(cancel, SEGMENTATION_REQUEST_TIMEOUT_MS) });
   if (!response.ok) throw new ProviderError("segmentation input image is unreadable", response.status);
   return { data: Buffer.from(await response.arrayBuffer()).toString("base64"), mime_type: response.headers.get("content-type")?.split(";")[0] ?? "image/png" };
 }

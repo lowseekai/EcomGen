@@ -57,11 +57,22 @@ const recoveryRedis = redis.duplicate();
 const recoveryQueue = createJobQueue(recoveryRedis);
 const executionRedis = redis.duplicate();
 const executionQueue = createJobQueue(executionRedis);
+async function cleanupExpiredSessions(): Promise<void> {
+  try {
+    const removed = repository.deleteExpiredSessions(new Date().toISOString());
+    if (removed > 0) console.log(`purged ${removed} expired sessions`);
+  } catch (error) {
+    // 清理是维护动作，失败不能拖垮任务处理。
+    console.error(`session cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 async function cleanupExpiredEditReferences(): Promise<void> {
   for (const asset of repository.listExpiredEditReferenceAssets()) { await storage.delete(asset.storagePath); repository.deleteEditReferenceAsset(asset.id); }
 }
 await cleanupExpiredEditReferences();
-const referenceCleanupTimer = setInterval(() => { void cleanupExpiredEditReferences(); }, 60 * 60 * 1000);
+await cleanupExpiredSessions();
+const referenceCleanupTimer = setInterval(() => { void cleanupExpiredEditReferences(); void cleanupExpiredSessions(); }, 60 * 60 * 1000);
 referenceCleanupTimer.unref();
 // 进程异常退出后，数据库中的 RUNNING 任务会被重新置为 QUEUED 并再次交给 BullMQ。
 for (const recovered of repository.recoverInterruptedJobs()) await enqueue(recoveryQueue, { jobId: recovered.id, kind: queueKindForJobType(recovered.type) });

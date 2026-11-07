@@ -1,4 +1,5 @@
 import { requestSignal } from "./abort.js";
+import { assertSafeRemoteUrl } from "./remote-url.js";
 import { ProviderConnection, ProviderError } from "./openai-compatible.js";
 
 /**
@@ -136,7 +137,7 @@ async function readResultImage(url: string, cancel?: AbortSignal): Promise<{ dat
     const mimeType = /data:([^;]+)/.exec(url.slice(0, comma))?.[1] ?? "image/png";
     return { data: Buffer.from(url.slice(comma + 1), "base64"), mimeType };
   }
-  const response = await fetch(url, { signal: requestSignal(cancel, DOWNLOAD_TIMEOUT_MS) });
+  const response = await fetch(assertSafeRemoteUrl(url), { signal: requestSignal(cancel, DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) throw new ProviderError("Seedream result image URL is unreadable", response.status);
   return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get("content-type")?.split(";")[0] ?? "image/png" };
 }

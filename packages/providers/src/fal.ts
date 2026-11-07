@@ -1,4 +1,5 @@
 import { requestSignal } from "./abort.js";
+import { assertSafeRemoteUrl } from "./remote-url.js";
 import { ProviderConnection, ProviderError } from "./openai-compatible.js";
 
 /**
@@ -108,7 +109,7 @@ export class FalSegmentationProvider {
       const mimeType = /data:([^;]+)/.exec(header)?.[1] ?? "image/png";
       return { data: Buffer.from(url.slice(comma + 1), "base64"), mimeType };
     }
-    const imageResponse = await fetch(url, { signal: requestSignal(cancel, SEGMENTATION_REQUEST_TIMEOUT_MS) });
+    const imageResponse = await fetch(assertSafeRemoteUrl(url), { signal: requestSignal(cancel, SEGMENTATION_REQUEST_TIMEOUT_MS) });
     if (!imageResponse.ok) throw new ProviderError("fal returned an unreadable mask URL", imageResponse.status);
     const mimeType = imageResponse.headers.get("content-type")?.split(";")[0] ?? ref.content_type ?? "image/png";
     return { data: Buffer.from(await imageResponse.arrayBuffer()), mimeType };

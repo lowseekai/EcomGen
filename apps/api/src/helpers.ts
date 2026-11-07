@@ -137,8 +137,13 @@ export async function sendStored(request: FastifyRequest, reply: FastifyReply, s
   const etag = record.hash ? `"${record.hash}"` : undefined;
   if (etag && request.headers["if-none-match"] === etag) return reply.code(304).send();
   const size = await storage.size(record.storagePath);
+  // 服务端一律声明 nosniff：即使 Content-Type 判错，浏览器也不会嗅探成可执行内容。
+  // 非位图类型强制 attachment：文件可以被下载，但不会在应用源上被渲染执行。
+  const contentType = record.mimeType ?? mimeForPath(record.storagePath);
+  reply.header("x-content-type-options", "nosniff");
+  if (!SAFE_INLINE_MIME_TYPES.has(contentType)) reply.header("content-disposition", "attachment");
   reply
-    .type(record.mimeType ?? mimeForPath(record.storagePath))
+    .type(contentType)
     .header("cache-control", "public, max-age=31536000, immutable")
     .header("accept-ranges", "bytes")
     .header("content-length", size)
@@ -157,12 +162,39 @@ export async function sendStored(request: FastifyRequest, reply: FastifyReply, s
  * 上传类路由只该有这一份收集规则：每个路由各抄一遍的话，将来补一条字段约束必然漏掉某处。
  * 缺文件不做判定——「是否必需」由各路由自己决定（引用来源可以从花型库拷贝，本来就没有文件）。
  */
+/**
+ * 允许上传的图片类型白名单。
+ *
+ * **必须用白名单而不是 `image/` 前缀**：`image/svg+xml` 是主动内容类型，
+ * 浏览器直接打开时会执行其中的脚本，等同于在应用源上跑任意代码（存储型 XSS）。
+ * 同类风险还有 XML 系图像；白名单能一次挡住所有这类"看着是图片、实际可执行"的类型。
+ */
+/** 允许浏览器内联渲染的类型。不在此列的一律强制下载（attachment）。 */
+const SAFE_INLINE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]);
+
+const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"]);
+
+/** 即使 mime 声称合法，扩展名是 .svg 也一律拒绝——两层都挡住才算稳。 */
+export function assertImageUpload(mimetype: string, filename: string): void {
+  const normalized = mimetype.toLowerCase().split(";")[0].trim();
+  // SVG 单独给一条明确的错误：用户最容易上传它，也最需要知道"为什么不行"。
+  if (normalized === "image/svg+xml" || normalized === "image/svg") {
+    throw new ApiError(400, "VALIDATION_ERROR", "不支持 SVG 上传：SVG 可携带脚本，会造成存储型 XSS");
+  }
+  if (!ALLOWED_IMAGE_MIME_TYPES.has(normalized)) {
+    throw new ApiError(400, "VALIDATION_ERROR", `不支持的图片类型：${mimetype}。仅支持 PNG / JPEG / WebP / GIF / AVIF`);
+  }
+  if (/\.svg$/i.test(filename.trim())) {
+    throw new ApiError(400, "VALIDATION_ERROR", "不支持 SVG 上传：SVG 可携带脚本，会造成存储型 XSS");
+  }
+}
+
 export async function readImageMultipart(request: FastifyRequest): Promise<{ upload: { filename: string; buffer: Buffer; mimetype: string } | null; fields: Record<string, string> }> {
   let upload: { filename: string; buffer: Buffer; mimetype: string } | null = null;
   const fields: Record<string, string> = {};
   for await (const part of request.parts()) {
     if (part.type === "file") {
-      if (!part.mimetype.startsWith("image/")) throw new ApiError(400, "VALIDATION_ERROR", "Only image files are supported");
+      assertImageUpload(part.mimetype, part.filename ?? "");
       if (upload) throw new ApiError(400, "VALIDATION_ERROR", "A single image file is supported");
       upload = { filename: part.filename || "image.png", buffer: await part.toBuffer(), mimetype: part.mimetype };
       continue;

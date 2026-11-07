@@ -15,7 +15,9 @@ import {
 import { createChargedJob } from "../charged-jobs.js";
 import type { ApiContext } from "../context.js";
 import { ApiError } from "../errors.js";
-import { assertFeature,contentHash, imageDimensions, missing } from "../helpers.js";
+import { assertFeature,contentHash, imageDimensions, missing,
+  assertImageUpload,
+} from "../helpers.js";
 import { parseBody } from "../http-input.js";
 import { parameter, readOptionalText, readText } from "../input-normalizers.js";
 import { suiteIdForImport } from "./suites.js";
@@ -75,7 +77,7 @@ export function registerSuiteForgeRoutes(app: FastifyInstance, ctx: ApiContext):
     const uploads: Array<{ filename: string; mimeType: string; buffer: Buffer; hash: string }> = [];
     for await (const part of request.parts()) {
       if (part.type === "file") {
-        if (!part.mimetype.startsWith("image/")) throw new ApiError(400, "VALIDATION_ERROR", "Only image files are supported");
+        assertImageUpload(part.mimetype, part.filename ?? "");
         const buffer = await part.toBuffer();
         uploads.push({ filename: part.filename || "source", mimeType: part.mimetype, buffer, hash: contentHash(buffer) });
         continue;

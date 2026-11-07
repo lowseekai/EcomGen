@@ -25,6 +25,11 @@ services:
       ECOMGEN_QUEUE_NAME: ${ECOMGEN_QUEUE_NAME:-ecomgen}
       # 前后端分离部署时必须设置，否则浏览器会被 CORS 拦掉。
       ECOMGEN_CORS_ORIGINS: ${ECOMGEN_CORS_ORIGINS:-}
+      # 反代后必须设置（单层 Nginx 填 1），否则 request.ip 恒为代理地址，
+      # 所有用户共享同一个登录限流桶。代码会拒绝 "true"，只接受跳数或地址列表。
+      ECOMGEN_TRUST_PROXY: ${ECOMGEN_TRUST_PROXY:-}
+      # Provider 返回的图片 URL 会做 SSRF 校验；仅自建内网 Provider 才需打开。
+      ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS: ${ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS:-false}
     ports:
       - "8787:8787"
     volumes:
@@ -34,6 +39,11 @@ services:
     build: .
     restart: unless-stopped
     command: ["node", "apps/worker/dist/worker.js"]
+    # 镜像自带的 HEALTHCHECK 探的是 API 的 /health；worker 不起 HTTP 服务，
+    # 继承这个探针会让它永远 unhealthy。worker 的存活通过日志里的
+    # "ecomgen worker ready" 与队列消费情况观测。
+    healthcheck:
+      disable: true
     depends_on:
       - redis
     environment:
@@ -41,6 +51,7 @@ services:
       ECOMGEN_DATA_DIR: /app/data
       ECOMGEN_MASTER_KEY: ${ECOMGEN_MASTER_KEY:?Set a base64-encoded 32-byte key in .env}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS: ${ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS:-false}
       ECOMGEN_QUEUE_NAME: ${ECOMGEN_QUEUE_NAME:-ecomgen}
       WORKER_JOB_TIMEOUT_MS: ${WORKER_JOB_TIMEOUT_MS:-900000}
     volumes:

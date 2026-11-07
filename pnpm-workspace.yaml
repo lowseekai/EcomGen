@@ -1,6 +1,22 @@
 packages:
   - apps/*
   - packages/*
+overrides:
+  # 生产依赖的传递漏洞。
+  # pnpm 11 的 overrides 必须写在 pnpm-workspace.yaml 里（写在 package.json 不生效）。
+  #
+  # brace-expansion：<2.1.7 存在 `{a},b}` 展开的二次方复杂度 DoS。
+  # @fastify/busboy：<3.2.2 存在 multipart filename/name 的 CRLF 注入。
+  #   multipart 声明的是 ^3.0.0，升到 3.2.5 属补丁级，不改变行为。
+  #
+  # 未覆盖的 glob（需 >=14.0.2）与 minimatch（需 >=11.0.1）都是跨大版本：
+  # 强行覆盖会破坏 archiver 与 @fastify/static。它们的通告都要求攻击者可控的 glob 模式，
+  # 而本项目的模式全部来自常量与内部生成，没有该入口。
+  brace-expansion@2.1.4: 2.1.7
+  brace-expansion@2.1.6: 2.1.7
+  glob@10.4.5: 10.5.0
+  '@fastify/busboy@3.2.1': 3.2.5
+
 allowBuilds:
   '@google/genai': false
   better-sqlite3: true

@@ -11,6 +11,7 @@ import { ApiError } from "../errors.js";
 import { currentUser } from "../auth-guard.js";
 import { ensureModel, missing, reusableFingerprintedJob, verifyModel,
   assertFeature,
+  assertImageUpload,
 } from "../helpers.js";
 import { parseBody } from "../http-input.js";
 import { parameter, readPatchText, readText } from "../input-normalizers.js";
@@ -115,7 +116,7 @@ export function registerModelRoutes(app: FastifyInstance, ctx: ApiContext): void
     let upload: { filename: string; buffer: Buffer } | null = null;
     for await (const part of request.parts()) {
       if (part.type !== "file") continue;
-      if (!part.mimetype.startsWith("image/")) throw new ApiError(400, "VALIDATION_ERROR", "Only image files are supported");
+      assertImageUpload(part.mimetype, part.filename ?? "");
       upload = { filename: part.filename || "reference-face", buffer: await part.toBuffer() };
       break;
     }

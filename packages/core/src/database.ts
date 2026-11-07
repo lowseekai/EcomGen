@@ -12,6 +12,7 @@ export function openDatabase(filename: string): SqliteDatabase {
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");
   database.pragma("busy_timeout = 5000");
+  useImmediateTransactions(database);
   try {
     migrate(database);
   } catch (error) {
@@ -1382,4 +1383,28 @@ function backfillModelSpecDimensions(database: SqliteDatabase): void {
     for (const row of pending) update.run(JSON.stringify({ ...MODEL_SPEC_DEFAULTS, ...row.spec }), row.id);
   });
   backfill();
+}
+
+
+/**
+ * 让所有 `db.transaction(fn)` 默认走 `BEGIN IMMEDIATE`。
+ *
+ * 起因（已用两个连接实测）：本项目是 **API 与 Worker 两个进程写同一个 SQLite 文件**，
+ * 而 better-sqlite3 的 `transaction()` 默认是 deferred `BEGIN`——先读后写的事务在
+ * 读之后、写之前若另一个进程提交了，升级写锁会直接抛 `SQLITE_BUSY_SNAPSHOT`。
+ * 该错误**不受 `busy_timeout` 约束**，所以表现为"偶发 500"而不是等待。
+ *
+ * 典型受害者是 `creditRepository.applyEntry`（先读余额再写绝对值）：
+ * 用户建任务时若恰好有别的任务在结算，扣费就会失败。
+ *
+ * `BEGIN IMMEDIATE` 在事务开始时就取写锁，第二个进程按 `busy_timeout` 等待而不是失败。
+ * 代价是写事务串行化——SQLite 本来只有一个写者，实际没有损失。
+ */
+function useImmediateTransactions(database: SqliteDatabase): void {
+  const original = database.transaction.bind(database) as typeof database.transaction;
+  database.transaction = ((fn: (...args: never[]) => unknown) => {
+    const transaction = original(fn);
+    // 保留 deferred/exclusive 变体，只把默认调用改成 immediate。
+    return Object.assign((...args: never[]) => transaction.immediate(...args), transaction);
+  }) as typeof database.transaction;
 }

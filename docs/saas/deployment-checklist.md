@@ -27,6 +27,29 @@
 | `WORKER_JOB_TIMEOUT_MS` | 单任务墙钟上限 | `900000`（15 分钟） |
 | `ECOMGEN_QUEUE_NAME` | 队列名（API 与 Worker 必须一致） | `ecomgen` |
 | `ECOMGEN_CORS_ORIGINS` | 前端来源白名单，逗号分隔 | 空（只允许本机 dev server） |
+| `ECOMGEN_TRUST_PROXY` | 受信代理跳数或地址列表 | 空（不信任任何代理） |
+| `ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS` | 允许 Provider 返回内网图片 URL | `false` |
+
+### `ECOMGEN_TRUST_PROXY`：放在反代后面必须设置
+
+**不设置它的后果**：`request.ip` 恒为反向代理的地址，所有用户共享同一个限流桶。
+攻击者只要持续失败登录，就能在窗口期内把**全站**的登录/注册/找回密码一起锁死。
+
+| 部署形态 | 取值 |
+| --- | --- |
+| 无反向代理（直接暴露） | 不设置 |
+| Nginx / Caddy 单层 | `1` |
+| CDN + 反代两层 | `2` |
+| 只信任特定地址 | `10.0.0.5,172.17.0.0/16` |
+
+> **绝对不要写 `true`**。代码会显式把它当作 `false` 处理——无条件信任
+> `X-Forwarded-For` 会让限流可被伪造请求头绕过，等于没有限流。
+
+### `ECOMGEN_ALLOW_PRIVATE_PROVIDER_URLS`
+
+Worker 会下载 Provider 返回的图片 URL。默认拒绝私有网段、回环、链路本地与云元数据地址
+（`169.254.169.254`），防止被攻陷的 Provider 把 Worker 当成进入内网的跳板。
+**只有**自建 Provider 且确实部署在内网时才打开。
 
 > **同源部署（API 自托管 Web）不需要 CORS**，留空即可。
 > 一旦把前端拆到别的域，必须设置 `ECOMGEN_CORS_ORIGINS`，否则前端所有请求被 CORS 拦掉，
@@ -80,23 +103,65 @@ server {
 
 **备份不能只拷 `.sqlite`**：WAL 模式下未 checkpoint 的事务在 `-wal` 里，只拷主文件会丢最近的数据。实测过：主库文件 4 KB，而一致性备份出来 733 KB —— 差的全部在 WAL 里。
 
-正确做法（用 SQLite 官方的在线备份 API，不需要停服务）：
+正确做法（用 SQLite 官方的在线备份 API，不需要停服务）。仓库已内置 CLI：
 
 ```bash
-docker compose exec api node -e "
-  const Database = require('/app/packages/core/node_modules/better-sqlite3');
-  const db = new Database('/app/data/ecomgen.sqlite', { readonly: true });
-  db.backup('/app/data/backup-' + Date.now() + '.sqlite')
-    .then(() => { console.log('backup ok'); process.exit(0); })
-    .catch((e) => { console.error(e.message); process.exit(1); });
-"
+# 生成一份一致性快照到 /app/data/backups/，并自动清理旧快照
+docker compose exec -T api node apps/api/dist/backup-cli.js
 
-# 再把备份文件与素材目录一起取出
-docker compose cp api:/app/data ./backup-$(date +%F)
+# 保留最近 14 份（默认 7）
+docker compose exec -T -e ECOMGEN_BACKUP_KEEP=14 api node apps/api/dist/backup-cli.js
+
+# 把快照取出到宿主机
+docker compose cp api:/app/data/backups ./backups
 ```
 
-> 路径是 `/app/packages/core/node_modules/better-sqlite3` 而不是 `/app/node_modules/better-sqlite3`：
-> pnpm 不会把依赖提升到根，`require` 根路径会失败。
+建议用宿主 cron 每天跑一次：
+
+```cron
+0 3 * * * cd /srv/ecomgen && docker compose exec -T api node apps/api/dist/backup-cli.js >> /var/log/ecomgen-backup.log 2>&1
+```
+
+> **备份必须包含素材目录**。数据库只记录路径，真正的图片在 `assets/ outputs/ layers/ exports/ patterns/` 下。
+> 只恢复数据库、不恢复这些目录，结果是"记录都在、图全打不开"。
+> 完整做法：`docker compose cp api:/app/data ./backup-$(date +%F)`（含库与全部产物）。
+
+> **恢复演练**：至少做一次"把快照放进空卷 → 启动 → 登录并打开一个项目"的验证。
+> 没演练过的备份等于没有备份。
+
+### 恢复流程
+
+**先停服务**。运行中的进程持有数据库连接，替换主库会导致它继续写旧文件。
+
+```bash
+docker compose stop api worker
+
+# 1) 看有哪些快照，挑一份（脚本会先校验完整性，损坏的直接拒绝）
+docker compose run --rm api node apps/api/dist/restore-cli.js /app/data/backups/ecomgen-<时间戳>.sqlite
+
+# 2) 如果目标库还在，需要显式确认覆盖（脚本会先把当前库备份成 pre-restore-<时间戳>.sqlite）
+docker compose run --rm -e ECOMGEN_RESTORE_FORCE=true api \
+  node apps/api/dist/restore-cli.js /app/data/backups/ecomgen-<时间戳>.sqlite
+
+# 3) 恢复素材目录（数据库只记路径，不恢复它就会「记录都在、图全打不开」）
+docker compose cp ./backup-2026-11-05/assets api:/app/data/
+docker compose cp ./backup-2026-11-05/outputs api:/app/data/
+
+docker compose start api worker
+```
+
+脚本会做四件事：校验快照 `integrity_check`、给当前库做安全备份、连同 `-wal`/`-shm` 一起替换、
+恢复后再校验一次并打印关键表行数。
+
+### 演练
+
+```bash
+pnpm rehearse:restore
+```
+
+在临时目录里造数据 → 备份 → 删库 → 恢复 → 核对，并验证三个护栏
+（拒绝覆盖已有库、强制覆盖前留安全备份、拒绝损坏快照）。**CI 每次都会跑这个演练。**
+
 
 `docker compose down -v` 会**删除命名卷**，即清空所有数据。升级时只用 `docker compose down`（不带 `-v`）。
 

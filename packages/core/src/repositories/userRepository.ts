@@ -170,6 +170,16 @@ export class UserRepository {
   }
 
   /** 改密码、封禁、删号都必须撤销全部会话，否则旧 Cookie 仍可继续访问。 */
+  /**
+   * 删除已过期的会话行。
+   *
+   * 会话 TTL 30 天且每次登录新增一行，没有清理的话表只增不减；
+   * 过期行虽然不影响鉴权（查询带 expires_at 条件），但会持续占用空间与索引。
+   */
+  public deleteExpiredSessions(nowIso: string): number {
+    return this.db.prepare("DELETE FROM user_sessions WHERE expires_at <= ?").run(nowIso).changes;
+  }
+
   public revokeUserSessions(userId: string): number {
     return this.db.prepare("UPDATE user_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL").run(now(), userId).changes;
   }

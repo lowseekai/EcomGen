@@ -140,7 +140,6 @@ function upgradeToTls(socket: Socket, host: string): Promise<TLSSocket> {
 
 function encodeHeaderValue(value: string): string {
   // 非 ASCII 走 RFC 2047 encoded-word；纯 ASCII 原样，避免无谓的编码损失可读性。
-  // eslint-disable-next-line no-control-regex
   return /^[\x20-\x7E]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
 

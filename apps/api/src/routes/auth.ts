@@ -145,7 +145,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: ApiContext): void 
       }
     } else {
       // 没配 SMTP 时令牌无处可去，只能落日志供管理员手工取用。
-      request.log.warn({ email, resetToken: token, expiresAt }, "password reset token issued (no mailer configured)");
+      // 不在这里用 warn：令牌等同于一次性登录凭据，写进日志聚合系统等于扩大泄露面。
+      // 需要人工转发时把日志级别临时调到 debug，或改用设置项 password_reset_expose_token。
+      request.log.debug({ email, resetToken: token, expiresAt }, "password reset token issued (no mailer configured)");
     }
 
     // 内测环境可临时打开该开关把令牌直接返回，生产必须关闭。

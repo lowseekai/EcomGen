@@ -20,7 +20,7 @@
     "ag-psd": "^31.0.2",
     "archiver": "^7.0.1",
     "bullmq": "^6.1.2",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.4"

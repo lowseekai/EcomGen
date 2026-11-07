@@ -115,8 +115,7 @@ export function StoryboardInspector({
     if (dirtyRef.current.size === 0) return;
     const timer = window.setTimeout(runSave, DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, item.status]);
+    }, [draft, item.status]);
 
   // 卸载（关闭弹窗或切换分镜）时防抖可能尚未到期：立即 flush 未保存字段，避免静默丢失
   const flushRef = useRef(() => {});

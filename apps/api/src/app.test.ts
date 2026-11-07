@@ -819,7 +819,7 @@ describe("项目提示词语种 promptLanguage", () => {
 });
 
 describe("DELETE /api/v1/projects/:projectId 路径穿越防御", () => {
-  it.each(["..", encodeURIComponent("../evil"), encodeURIComponent("C:\Windows")])("拒绝非 UUID 的项目 ID：%s", async (encoded) => {
+  it.each(["..", encodeURIComponent("../evil"), encodeURIComponent("C:\\Windows")])("拒绝非 UUID 的项目 ID：%s", async (encoded) => {
     // 与被测 API 共享 dataDir：穿越参数若抵达存储层会删除目录内容，这里预置一个受害者文件
     const store = new LocalAssetStore(dataDir);
     await store.initialize();

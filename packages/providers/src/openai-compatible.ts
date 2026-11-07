@@ -2,6 +2,7 @@ import type { EditOperation, ImageQuality, ModelCapabilities } from "@ecomgen/co
 import { isGptImageModel } from "@ecomgen/contracts";
 
 import { requestSignal } from "./abort.js";
+import { assertSafeRemoteUrl } from "./remote-url.js";
 
 export interface ProviderConnection {
   baseUrl: string;
@@ -261,7 +262,8 @@ export class OpenAiCompatibleImageProvider {
       return { image, mimeType: sniffImageMimeType(image) ?? "image/png", providerTaskId: body.task_id ?? body.id };
     }
     if (result?.url) {
-      const imageResponse = await fetch(result.url, { signal: requestSignal(cancel, IMAGE_DOWNLOAD_TIMEOUT_MS) });
+      // URL 来自 Provider 响应体，必须校验：否则恶意/被攻陷的 Provider 可让 Worker 访问内网与云元数据。
+      const imageResponse = await fetch(assertSafeRemoteUrl(result.url), { signal: requestSignal(cancel, IMAGE_DOWNLOAD_TIMEOUT_MS) });
       if (!imageResponse.ok) throw new ProviderError("Provider returned an unreadable image URL", imageResponse.status);
       const image = Buffer.from(await imageResponse.arrayBuffer());
       const mimeType = sniffImageMimeType(image)

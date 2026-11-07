@@ -43,7 +43,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
           displayName: values.displayName?.trim() || undefined,
         });
       }
-      navigate(from, { replace: true });
+      void navigate(from, { replace: true });
     } catch {
       // 错误由 mutation.error 统一渲染；这里只是阻止未捕获的 rejection。
     }

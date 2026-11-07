@@ -3,7 +3,7 @@ import { join } from "node:path";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { fastifySSE } from "@fastify/sse";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { BillingService, EcomRepository, LocalAssetStore, SecretBox, SuiteCatalog, ensureBootstrapOwner, openDatabase, requireActiveScope, type JobRecord } from "@ecomgen/core";
 import { createJobQueue, createRedisConnection, enqueue, queueKindForJobType, RedisProjectEventBus, type EcomJobKind } from "@ecomgen/jobs";
 import { MAX_SUITE_FORGE_SOURCES, MAX_UPLOAD_FILE_BYTES } from "@ecomgen/contracts";
@@ -69,7 +69,18 @@ export function resolveCorsOrigins(configured?: string[]): string[] {
 }
 
 export async function buildApi(options: ApiOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: true, genReqId: () => randomUUID() });
+  const app = Fastify({
+    logger: true,
+    genReqId: () => randomUUID(),
+    // 反向代理后的客户端 IP。
+    //
+    // 默认 false：直接取 socket 地址。部署在 Nginx 之后时必须设置，
+    // 否则所有用户共享代理 IP，登录/注册/找回密码的限流会退化成"全站一个桶"——
+    // 攻击者只要持续失败就能把所有人锁在门外。
+    // 但也**不能**简单设成 true：那会无条件信任 X-Forwarded-For，可被伪造绕过限流。
+    // 因此这里只接受"确切跳数"或"受信代理地址列表"。
+    trustProxy: readTrustProxy(process.env.ECOMGEN_TRUST_PROXY),
+  });
   const database = openDatabase(join(options.dataDir, "ecomgen.sqlite"));
   /**
    * 两个仓储实例，职责不同：
@@ -126,6 +137,21 @@ export async function buildApi(options: ApiOptions): Promise<FastifyInstance> {
       done(error as Error, undefined);
     }
   });
+  // 安全响应头。缺了 nosniff 时，浏览器可能把图片响应嗅探成可执行内容，
+  // 这是存储型 XSS 的放大器（见审计报告 P0-1）。
+  app.addHook("onSend", async (_request, reply) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    reply.header("referrer-policy", "no-referrer");
+    reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
+    // CSP 与前端产物匹配：脚本全部是外链（构建产物无内联 script），
+    // 样式需要 unsafe-inline（antd 运行时注入 style 标签）。
+    reply.header(
+      "content-security-policy",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    );
+  });
+
   app.addHook("onClose", async () => { await events.close(); await queue.close(); database.close(); });
   /**
    * 入队是持久化之后的第二步：数据库已落 QUEUED 而入队失败时，任务永远不会执行，
@@ -228,3 +254,26 @@ export async function buildApi(options: ApiOptions): Promise<FastifyInstance> {
   await registerWebStatic(app);
   return app;
 }
+
+/**
+ * 解析 ECOMGEN_TRUST_PROXY。
+ *
+ * 只接受两种写法：
+ * - 纯数字：受信代理的跳数（例如 Nginx 单层填 1）；
+ * - 逗号分隔的地址/CIDR：显式受信代理列表。
+ * 其余（含 "true"）一律按 false 处理——无条件信任 X-Forwarded-For 会让限流可被伪造绕过。
+ */
+export function readTrustProxy(raw: string | undefined): FastifyServerOptions["trustProxy"] {
+  const value = (raw ?? "").trim().toLowerCase();
+  // "true" 必须显式拒绝：无条件信任 X-Forwarded-For 等于让限流可被伪造绕过。
+  if (value === "" || value === "false" || value === "true") return false;
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    // Fastify 的类型不接受数字跳数，用等价的判定函数表达：
+    // 从右往左数，前 hops 跳视为受信代理。
+    return hops > 0 ? ((_address: string, hop: number) => hop < hops) : false;
+  }
+  const entries = (raw ?? "").split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
+  return entries.length > 0 ? entries : false;
+}
+

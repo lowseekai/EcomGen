@@ -6,5 +6,6 @@ export * from "./grounded-sam.js";
 export * from "./seedream-layerize.js";
 export * from "./gitee-sam3.js";
 export * from "./segmentation.js";
+export * from "./remote-url.js";
 export * from "./reasoning-profile.js";
 export * from "./reasoning-probe.js";

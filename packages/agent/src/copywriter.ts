@@ -76,7 +76,8 @@ export async function writeCopywriting(input: CopywritingInput): Promise<Copywri
     await agent.prompt(
       `Your previous result is too long. Rewrite it with the same JSON schema and the same facts, shortening every field so the final formatted content stays within ${limit} characters. Return only the JSON.`,
     );
-    if (agent.state.errorMessage) throw new Error(`Copywriting model request failed: ${agent.state.errorMessage}`);
+    // 保留原始错误作为 cause：压缩重试失败时，真正的原因往往是第一次的解析错误。
+    if (agent.state.errorMessage) throw new Error(`Copywriting model request failed: ${agent.state.errorMessage}`, { cause: error });
     result = validateCopywriting(input.target, parseJsonResponse(latestAssistantText(agent.state.messages, "Copywriting")));
   }
   return result;

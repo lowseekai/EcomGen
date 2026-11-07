@@ -172,8 +172,7 @@ export function ModelsPage() {
     if (status === "SUCCEEDED") message.success("定妆照已生成");
     else message.error(`定妆照生成失败：${jobErrorText(castJob.data) ?? "请检查生图模型配置"}`);
     // selected 只用来定位失效范围，其引用变化不应重触发本 effect。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [castJobId, castJob.data, message, queryClient]);
+    }, [castJobId, castJob.data, message, queryClient]);
 
   const cast = useCreateModelCastJob();
   const selectPortrait = useSelectModelPortrait();

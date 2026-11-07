@@ -422,6 +422,8 @@ export class EcomRepository {
   public findActiveSession(tokenHash: string): { session: SessionRecord; user: UserRecord } | undefined { return this.users.findActiveSession(tokenHash); }
   public touchSession(id: string): void { return this.users.touchSession(id); }
   public revokeSession(id: string): void { return this.users.revokeSession(id); }
+  public deleteExpiredSessions(nowIso: string): number { return this.users.deleteExpiredSessions(nowIso); }
+
   public revokeUserSessions(userId: string): number { return this.users.revokeUserSessions(userId); }
   public listUserSessions(userId: string): SessionRecord[] { return this.users.listUserSessions(userId); }
   public createPasswordResetToken(userId: string, tokenHash: string, expiresAt: string): string { return this.users.createPasswordResetToken(userId, tokenHash, expiresAt); }

@@ -315,9 +315,8 @@ export function EditImageWorkspace({ projectId, project, output, outputs, assets
   const snapshot = (records = annotations): Snapshot => ({ edit: editMaskRef.current?.toDataURL() ?? "", protect: protectMaskRef.current?.toDataURL() ?? "", annotations: records.map((annotation) => structuredClone(annotation)) });
   const pushHistory = (records = annotations) => {
     const next = [...historyRef.current.slice(0, historyIndexRef.current + 1), snapshot(records)].slice(-MAX_HISTORY_ENTRIES);
-    let bytes = 0;
     while (next.length > 1) {
-      bytes = next.reduce((total, value) => total + value.edit.length + value.protect.length + JSON.stringify(value.annotations).length, 0);
+      const bytes = next.reduce((total, value) => total + value.edit.length + value.protect.length + JSON.stringify(value.annotations).length, 0);
       if (bytes <= MAX_HISTORY_BYTES) break;
       next.shift();
     }

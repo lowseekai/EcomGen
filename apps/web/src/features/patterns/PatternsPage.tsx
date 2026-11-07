@@ -152,7 +152,7 @@ export function PatternsPage() {
   /** 进入花型工作区；section 直达动作栏对应节（成包流水线/信息/衍生/规格包/交付）。 */
   const openPattern = useCallback(
     (patternId: string, section: "pipeline" | "info" | "derive" | "pack" | "listing" | null = null) => {
-      navigate(section ? `/patterns/${patternId}?section=${section}` : `/patterns/${patternId}`);
+      void navigate(section ? `/patterns/${patternId}?section=${section}` : `/patterns/${patternId}`);
     },
     [navigate],
   );
@@ -494,8 +494,8 @@ export function PatternsPage() {
         onClose={() => setStartDraftOpen(false)}
         onCreated={(draft) => {
           setStartDraftOpen(false);
-          queryClient.invalidateQueries({ queryKey: qk.patternDrafts });
-          navigate(`/pattern-drafts/${draft.id}`);
+          void queryClient.invalidateQueries({ queryKey: qk.patternDrafts });
+          void navigate(`/pattern-drafts/${draft.id}`);
         }}
       />
 

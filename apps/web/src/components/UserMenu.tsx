@@ -22,7 +22,7 @@ export function UserMenu() {
 
   const handleLogout = async () => {
     await logout.mutateAsync();
-    navigate("/login", { replace: true });
+    void navigate("/login", { replace: true });
   };
 
   const items: MenuProps["items"] = [

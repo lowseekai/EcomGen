@@ -8,6 +8,11 @@ import {
 } from "@ecomgen/core";
 
 import { currentUser } from "../auth-guard.js";
+import { consumeRateLimit } from "../rate-limit.js";
+
+/** 充值下单限流：每用户每分钟 5 单。下单会写订单行并生成网关链接，不限流可被脚本刷量。 */
+const TOPUP_LIMIT = 5;
+const TOPUP_WINDOW_MS = 60_000;
 import type { ApiContext } from "../context.js";
 import { ApiError } from "../errors.js";
 import { missing } from "../helpers.js";
@@ -61,6 +66,9 @@ export function registerBillingRoutes(app: FastifyInstance, ctx: ApiContext): vo
   /** 下单：创建订单并返回收银台地址。 */
   app.post("/api/v1/billing/topup-orders", async (request, reply) => {
     const user = currentUser(request);
+    // 每用户限流：下单会写一行订单并生成网关链接，不限流时可被脚本刷出大量垃圾订单。
+    const limit = await consumeRateLimit(`topup:${user.id}`, TOPUP_LIMIT, TOPUP_WINDOW_MS);
+    if (!limit.allowed) throw new ApiError(429, "RATE_LIMITED", `操作过于频繁，请 ${limit.retryAfterSeconds} 秒后再试`);
     const config = readEpayConfig(ctx);
     if (!config) throw new ApiError(422, "PROVIDER_NOT_CONFIGURED", "支付渠道尚未配置，请联系管理员");
 

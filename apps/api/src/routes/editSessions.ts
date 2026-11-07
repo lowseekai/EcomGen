@@ -22,6 +22,7 @@ import {
   missing,
   parseAssetRole,
   verifyModel,
+  assertImageUpload,
 } from "../helpers.js";
 import { parseBody } from "../http-input.js";
 import { enumValue, parameter, readJsonObject, readJsonTextArray, readObject, readOptionalText, readText, readTextArray } from "../input-normalizers.js";
@@ -147,7 +148,8 @@ export function registerEditSessionRoutes(app: FastifyInstance, ctx: ApiContext)
     const parts = request.parts(); let file: { name: string; mimeType: string; content: Buffer } | undefined; let purpose: ReferencePurpose = "PRODUCT_APPEARANCE";
     for await (const part of parts) {
       if (part.type === "file") {
-        if (part.fieldname !== "file" || !part.mimetype.startsWith("image/")) throw new ApiError(400, "VALIDATION_ERROR", "file must be an image");
+        if (part.fieldname !== "file") throw new ApiError(400, "VALIDATION_ERROR", "file must be an image");
+        assertImageUpload(part.mimetype, part.filename ?? "");
         file = { name: part.filename, mimeType: part.mimetype, content: await part.toBuffer() };
       } else if (part.fieldname === "purpose") purpose = enumValue<ReferencePurpose>(part.value, ["PRODUCT_APPEARANCE", "PACKAGING", "LABEL", "STYLE", "LAYOUT"], "purpose");
     }

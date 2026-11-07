@@ -15,7 +15,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # 依赖漏洞门禁：只查生产依赖。开发依赖（vitest/jsdom 等）不进运行时镜像，
+      # 其通告不应阻断发布；运行时出现 high/critical 则直接失败。
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
       - run: pnpm verify-contracts
       - run: pnpm build
       - run: pnpm test
+      - run: pnpm lint
+      # 备份/恢复演练：证明灾难恢复路径真的可用，而不只是脚本存在。
+      - run: pnpm rehearse:restore
       - run: pnpm lint:openapi
